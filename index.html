@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flunora</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ===================== LOGIN ===================== -->
+  <section id="view-login" class="view" hidden>
+    <div class="login-card">
+      <h1>Flunora</h1>
+      <p class="muted">Accedi per vedere entrate e uscite.</p>
+      <form id="login-form">
+        <label>Email
+          <input type="email" id="login-email" autocomplete="email" required>
+        </label>
+        <label>Password
+          <input type="password" id="login-password" autocomplete="current-password" minlength="6" required>
+        </label>
+        <div class="row">
+          <button type="submit" class="btn primary">Accedi</button>
+          <button type="button" id="btn-signup" class="btn">Registrati</button>
+        </div>
+        <p id="login-msg" class="msg" role="status"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ===================== APP ===================== -->
+  <section id="view-app" class="view" hidden>
+    <header class="topbar">
+      <span class="brand">Flunora</span>
+      <nav class="tabs">
+        <span class="tab disabled" title="In arrivo nel prossimo passo">Dashboard</span>
+        <span class="tab active">Mesi</span>
+      </nav>
+      <button id="btn-logout" class="btn small">Esci</button>
+    </header>
+
+    <main class="container">
+      <!-- Navigazione mese -->
+      <div class="card month-nav">
+        <button id="prev-month" class="link">&lsaquo; <span id="prev-label"></span></button>
+        <h2 id="month-label"></h2>
+        <button id="next-month" class="link"><span id="next-label"></span> &rsaquo;</button>
+      </div>
+
+      <!-- Totali -->
+      <div class="kpis">
+        <div class="card kpi"><span class="muted">Entrate</span><strong id="kpi-entrate">–</strong></div>
+        <div class="card kpi"><span class="muted">Uscite</span><strong id="kpi-uscite">–</strong></div>
+        <div class="card kpi"><span class="muted">Investimenti</span><strong id="kpi-invest">–</strong></div>
+        <div class="card kpi accent"><span class="muted">Saldo del mese</span><strong id="kpi-saldo">–</strong></div>
+      </div>
+
+      <div class="grid">
+        <!-- Ciambella categorie -->
+        <div class="card">
+          <h3>Spese per categoria</h3>
+          <div id="donut-wrap" class="donut-wrap"></div>
+          <p class="muted small">Investimenti esclusi dal grafico</p>
+        </div>
+
+        <!-- Elenco movimenti -->
+        <div class="card">
+          <div class="card-head">
+            <h3 id="list-title">Movimenti</h3>
+            <select id="filter-cat" aria-label="Filtra per categoria">
+              <option value="">Tutte le categorie</option>
+            </select>
+          </div>
+          <ul id="tx-list" class="tx-list"></ul>
+          <p id="tx-empty" class="muted" hidden>Nessun movimento in questo mese.</p>
+        </div>
+      </div>
+
+      <!-- Modulo rapido -->
+      <form id="tx-form" class="card quick-form">
+        <h3 id="form-title">Aggiungi movimento</h3>
+        <div class="fields">
+          <input id="f-amount" inputmode="decimal" placeholder="Importo €" aria-label="Importo" required>
+          <select id="f-kind" aria-label="Tipo">
+            <option value="uscita">Uscita</option>
+            <option value="entrata">Entrata</option>
+            <option value="investimento">Investimento</option>
+          </select>
+          <select id="f-category" aria-label="Categoria" required></select>
+          <input id="f-date" type="date" aria-label="Data" required>
+          <input id="f-desc" placeholder="Descrizione (facoltativa)" aria-label="Descrizione" maxlength="120">
+          <button type="submit" id="f-submit" class="btn primary">Salva</button>
+          <button type="button" id="f-cancel" class="btn" hidden>Annulla</button>
+        </div>
+        <p id="form-msg" class="msg" role="status"></p>
+      </form>
+    </main>
+
+    <!-- Pulsante + su telefono -->
+    <button id="fab" class="fab" aria-label="Aggiungi movimento">+</button>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
