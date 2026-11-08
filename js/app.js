@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.1.0";
+const APP_VERSION = "0.1.1";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -20,6 +20,9 @@ const state = {
   kind: "uscita",                    // tipo scelto nel pannello
   categoryId: null,                  // categoria scelta nel pannello
   lastCategory: {},                  // ultima categoria usata per ogni tipo
+  selecting: false,                  // modalità "Seleziona" attiva
+  selected: new Set(),               // id dei movimenti selezionati
+  selectedMonth: null,
 };
 
 // ---------- utilità ----------
@@ -55,14 +58,29 @@ function setMsg(el, text, isError = false) {
   el.classList.toggle("error", isError);
 }
 
-let toastTimer;
-function toast(text) {
+// Avviso breve; con `action` mostra un pulsante (es. "Annulla") e resta visibile più a lungo
+let toastTimer, toastAction = null;
+function toast(text, action = null) {
   const t = $("toast");
-  t.textContent = text;
+  $("toast-text").textContent = text;
+  const btn = $("toast-action");
+  toastAction = action;
+  btn.hidden = !action;
+  if (action) btn.textContent = action.label;
+  t.classList.toggle("has-action", !!action);
   t.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+  toastTimer = setTimeout(hideToast, action ? 5000 : 2200);
 }
+function hideToast() {
+  $("toast").classList.remove("show", "has-action");
+  toastAction = null;
+}
+$("toast-action").addEventListener("click", () => {
+  const a = toastAction;
+  hideToast();
+  a?.onClick();
+});
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -159,6 +177,7 @@ function route() {
     state.month = new Date(y, m - 1, 1);
   }
   state.page = p;
+  setSelecting(false);
   for (const id of ["dashboard", "mesi", "impostazioni"]) $("page-" + id).hidden = id !== p;
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.page === p));
   window.scrollTo(0, 0);
@@ -298,6 +317,7 @@ $("filter-cat").addEventListener("change", renderList);
 
 async function loadMonth() {
   const shown = state.month.getTime();
+  if (state.selectedMonth !== shown) { setSelecting(false); state.selectedMonth = shown; }
   $("month-label").textContent = `${MESI[state.month.getMonth()]} ${state.month.getFullYear()}`;
   const { data, error } = await sb
     .from("transactions")
@@ -383,17 +403,36 @@ function fillFilterSelect() {
   }
 }
 
+function visibleRows() {
+  const f = $("filter-cat").value;
+  return state.transactions.filter((t) => !f || t.category_id === f);
+}
+
 function renderList() {
   const ul = $("tx-list");
   ul.replaceChildren();
-  const f = $("filter-cat").value;
-  const rows = state.transactions.filter((t) => !f || t.category_id === f);
+  openRow = null;
+  const rows = visibleRows();
   ul.hidden = rows.length === 0;
   $("tx-empty").hidden = rows.length > 0;
+  $("btn-select").hidden = rows.length === 0 && !state.selecting;
+  $("swipe-hint").hidden = rows.length === 0 || state.selecting || hintSeen();
 
   for (const tx of rows) {
     const cat = catById(tx.category_id);
-    const li = el("li", "tap");
+    const li = el("li", "swipe" + (state.selected.has(tx.id) ? " selected" : ""));
+    li.dataset.id = tx.id;
+
+    // pulsante rosso, scoperto dallo scorrimento
+    const del = el("button", "swipe-delete");
+    del.type = "button";
+    del.setAttribute("aria-label", "Elimina movimento");
+    del.append(el("span", null, "Elimina"));
+    del.addEventListener("click", (e) => { e.stopPropagation(); deleteTransactions([tx]); });
+
+    const content = el("div", "row-content");
+    const check = el("span", "check");
+    check.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
     const grow = el("div", "grow");
     const sub = el("div", "sub");
     const dot = el("span", "dot"); dot.style.background = cat?.color || "#8e8e93";
@@ -404,10 +443,148 @@ function renderList() {
     grow.append(el("div", "title", tx.description || cat?.name || "Movimento"), sub);
     const amt = el("span", "amt" + (tx.kind === "entrata" ? " in" : ""),
       (tx.kind === "entrata" ? "+ " : "− ") + fmt(tx.amount_cents));
-    li.append(grow, amt);
-    li.addEventListener("click", () => openSheet(tx));
+    content.append(check, grow, amt);
+
+    li.append(del, content);
+    attachSwipe(li, content, tx);
     ul.append(li);
   }
+}
+
+// =========================================================
+//  ELIMINAZIONE (0.1.1): scorrimento, selezione multipla, annulla
+// =========================================================
+const OPEN_X = -88;          // larghezza del pulsante "Elimina" scoperto
+let openRow = null;          // riga attualmente aperta
+
+const hintSeen = () => { try { return localStorage.getItem("flunora.swipeHint") === "1"; } catch { return false; } };
+const markHintSeen = () => { try { localStorage.setItem("flunora.swipeHint", "1"); } catch {} $("swipe-hint").hidden = true; };
+
+function setRowX(li, x) { li.querySelector(".row-content").style.transform = x ? `translateX(${x}px)` : ""; }
+function closeOpenRow() { if (openRow) { setRowX(openRow, 0); openRow = null; } }
+
+function attachSwipe(li, content, tx) {
+  let startX = 0, startY = 0, x = 0, base = 0, mode = null, moved = false;
+
+  content.addEventListener("pointerdown", (e) => {
+    if (state.selecting || (e.pointerType === "mouse" && e.button !== 0)) return;
+    if (openRow && openRow !== li) closeOpenRow();
+    startX = e.clientX; startY = e.clientY;
+    base = openRow === li ? OPEN_X : 0;
+    x = base; mode = "pending"; moved = false;
+  });
+
+  content.addEventListener("pointermove", (e) => {
+    if (!mode) return;
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    if (mode === "pending") {
+      if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) {
+        mode = "swipe"; moved = true;
+        li.classList.add("dragging");
+        try { content.setPointerCapture(e.pointerId); } catch {}
+      } else if (Math.abs(dy) > 8) { mode = null; return; }
+    }
+    if (mode === "swipe") {
+      x = Math.min(0, base + dx);
+      if (x < -li.offsetWidth) x = -li.offsetWidth;
+      setRowX(li, x);
+    }
+  });
+
+  const end = () => {
+    if (mode !== "swipe") { mode = null; return; }
+    mode = null;
+    li.classList.remove("dragging");
+    if (x < -li.offsetWidth * 0.6) {            // scorrimento lungo: elimina subito
+      setRowX(li, -li.offsetWidth);
+      openRow = null;
+      deleteTransactions([tx]);
+    } else if (x < OPEN_X / 2) {                // a metà: resta aperta sul pulsante
+      setRowX(li, OPEN_X); openRow = li;
+      markHintSeen();
+    } else {
+      setRowX(li, 0); if (openRow === li) openRow = null;
+    }
+  };
+  content.addEventListener("pointerup", end);
+  content.addEventListener("pointercancel", end);
+
+  content.addEventListener("click", () => {
+    if (moved) { moved = false; return; }       // era uno scorrimento, non un tocco
+    if (state.selecting) return toggleSelected(li, tx);
+    if (openRow) return closeOpenRow();
+    openSheet(tx);
+  });
+}
+
+// chiude la riga aperta toccando altrove
+document.addEventListener("pointerdown", (e) => {
+  if (openRow && !openRow.contains(e.target)) closeOpenRow();
+}, true);
+
+// ---------- modalità Seleziona ----------
+$("btn-select").addEventListener("click", () => setSelecting(!state.selecting));
+
+function setSelecting(on) {
+  state.selecting = on;
+  state.selected.clear();
+  closeOpenRow();
+  $("tx-list").classList.toggle("selecting", on);
+  $("btn-select").textContent = on ? "Fine" : "Seleziona";
+  $("select-bar").hidden = !on;
+  $("tabbar").hidden = on;
+  document.querySelectorAll("#tx-list .swipe.selected").forEach((li) => li.classList.remove("selected"));
+  if (state.page === "mesi") $("swipe-hint").hidden = on || hintSeen() || visibleRows().length === 0;
+  updateSelectBar();
+}
+
+function toggleSelected(li, tx) {
+  if (state.selected.has(tx.id)) state.selected.delete(tx.id);
+  else state.selected.add(tx.id);
+  li.classList.toggle("selected", state.selected.has(tx.id));
+  updateSelectBar();
+}
+
+function updateSelectBar() {
+  const n = state.selected.size;
+  $("select-count").textContent = n === 0 ? "Nessun movimento selezionato"
+    : n === 1 ? "1 movimento selezionato" : `${n} movimenti selezionati`;
+  const btn = $("btn-delete-selected");
+  btn.disabled = n === 0;
+  btn.textContent = n ? `Elimina (${n})` : "Elimina";
+}
+
+$("btn-delete-selected").addEventListener("click", async () => {
+  const txs = state.transactions.filter((t) => state.selected.has(t.id));
+  if (!txs.length) return;
+  if (txs.length > 1 && !confirm(`Eliminare ${txs.length} movimenti?`)) return;
+  const ok = await deleteTransactions(txs);
+  if (ok) setSelecting(false);
+});
+
+// ---------- eliminazione con "Annulla" ----------
+async function deleteTransactions(txs) {
+  const ids = txs.map((t) => t.id);
+  const { error } = await sb.from("transactions").delete().in("id", ids);
+  if (error) {
+    toast("Eliminazione non riuscita: " + traduciErrore(error.message));
+    renderList();
+    return false;
+  }
+  state.transactions = state.transactions.filter((t) => !ids.includes(t.id));
+  renderKpis(); renderDonut(); renderList();
+
+  const copies = txs.map((t) => ({ ...t })); // copia completa, per poterli ripristinare
+  toast(txs.length === 1 ? "Movimento eliminato" : `${txs.length} movimenti eliminati`, {
+    label: "Annulla",
+    onClick: async () => {
+      const { error: e2 } = await sb.from("transactions").insert(copies);
+      if (e2) { toast("Ripristino non riuscito: " + traduciErrore(e2.message)); return; }
+      toast(copies.length === 1 ? "Movimento ripristinato" : "Movimenti ripristinati");
+      if (state.page === "mesi") loadMonth(); else if (state.page === "dashboard") loadDashboard();
+    },
+  });
+  return true;
 }
 
 // =========================================================
@@ -519,13 +696,8 @@ $("sheet").addEventListener("submit", async (e) => {
 $("sheet-delete").addEventListener("click", async () => {
   const tx = state.editing;
   if (!tx) return;
-  const label = tx.description || catById(tx.category_id)?.name || "questo movimento";
-  if (!confirm(`Eliminare "${label}" da ${fmt(tx.amount_cents)}?`)) return;
-  const { error } = await sb.from("transactions").delete().eq("id", tx.id);
-  if (error) { setMsg($("sheet-msg"), "Errore: " + traduciErrore(error.message), true); return; }
   closeSheet();
-  toast("Movimento eliminato");
-  refreshAfterChange(tx.date);
+  if (state.page === "mesi") await deleteTransactions([tx]);
 });
 
 // dopo un salvataggio aggiorna la pagina aperta (in "Mesi" si sposta sul mese del movimento)

@@ -105,10 +105,14 @@
 
       <div class="section-title row-between">
         <h3>Movimenti</h3>
-        <select id="filter-cat" aria-label="Filtra per categoria">
-          <option value="">Tutte</option>
-        </select>
+        <div class="head-actions">
+          <select id="filter-cat" aria-label="Filtra per categoria">
+            <option value="">Tutte</option>
+          </select>
+          <button type="button" id="btn-select" class="head-btn">Seleziona</button>
+        </div>
       </div>
+      <p id="swipe-hint" class="secondary small hint" hidden>Scorri un movimento verso sinistra per eliminarlo.</p>
       <ul id="tx-list" class="card list"></ul>
       <p id="tx-empty" class="secondary center" hidden>Nessun movimento in questo mese.<br>Tocca + per aggiungerne uno.</p>
     </main>
@@ -152,8 +156,14 @@
       <p class="secondary small center">Flunora · dati protetti su Supabase</p>
     </main>
 
+    <!-- ---------- BARRA DI SELEZIONE (sostituisce la barra in basso in modalità Seleziona) ---------- -->
+    <div id="select-bar" class="select-bar glass" hidden>
+      <span id="select-count">Nessun movimento selezionato</span>
+      <button type="button" id="btn-delete-selected" class="select-delete" disabled>Elimina</button>
+    </div>
+
     <!-- ---------- BARRA IN BASSO (liquid glass) ---------- -->
-    <nav class="tabbar" aria-label="Sezioni">
+    <nav class="tabbar" id="tabbar" aria-label="Sezioni">
       <div class="glass pill">
         <a href="#dashboard" class="tab" data-page="dashboard">
           <svg viewBox="0 0 24 24"><rect x="4" y="12" width="4" height="8" rx="1"/><rect x="10" y="6" width="4" height="14" rx="1"/><rect x="16" y="9" width="4" height="11" rx="1"/></svg>
@@ -206,7 +216,10 @@
       <button type="button" id="sheet-delete" class="btn-danger" hidden>Elimina movimento</button>
     </form>
 
-    <div id="toast" class="toast" role="status"></div>
+    <div id="toast" class="toast" role="status">
+      <span id="toast-text"></span>
+      <button type="button" id="toast-action" hidden></button>
+    </div>
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

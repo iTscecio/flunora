@@ -313,6 +313,57 @@ input, select { font: inherit; font-size: 17px; color: var(--text); }
   color: var(--bad); font-weight: 600; cursor: pointer; flex: none;
 }
 
+/* =========================================================
+   ELIMINAZIONE MOVIMENTI (0.1.1)
+   ========================================================= */
+.head-actions { display: flex; align-items: center; gap: 14px; }
+.head-btn { border: 0; background: none; color: var(--accent); font-size: 15px; padding: 4px 0; cursor: pointer; text-transform: none; }
+.hint { padding: 0 16px; margin-top: -6px; }
+
+/* riga scorrevole: il contenuto scivola e scopre il pulsante rosso */
+.list > li.swipe { padding: 0; overflow: hidden; }
+.swipe .row-content {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  min-height: 60px; padding: 10px 16px 10px 0;
+  background: var(--card); position: relative; z-index: 1;
+  touch-action: pan-y; user-select: none; -webkit-user-select: none;
+  transition: transform .28s cubic-bezier(.2, .8, .2, 1);
+  cursor: pointer;
+}
+.swipe.dragging .row-content { transition: none; }
+.swipe-delete {
+  position: absolute; top: 0; bottom: 0; right: 0; width: 100%;
+  display: flex; align-items: center; justify-content: flex-end;
+  padding-right: 20px; border: 0; background: var(--bad); color: #fff;
+  font-size: 15px; font-weight: 600; cursor: pointer;
+}
+.swipe-delete span { width: 56px; text-align: center; }
+
+/* modalità Seleziona */
+.check {
+  width: 24px; height: 24px; border-radius: 50%; flex: none;
+  border: 1.5px solid var(--separator); display: none; place-items: center;
+}
+.check svg { width: 14px; height: 14px; fill: none; stroke: #fff; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
+.selecting .check { display: grid; }
+.selecting .swipe .row-content { touch-action: auto; }
+.swipe.selected .check { background: var(--accent); border-color: var(--accent); }
+.swipe.selected .check svg { opacity: 1; }
+
+.select-bar {
+  position: fixed; z-index: 21; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom) + 10px);
+  width: calc(100% - 32px); max-width: 480px; height: var(--tabbar-h);
+  border-radius: calc(var(--tabbar-h) / 2);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 0 8px 0 22px; font-size: 15px;
+}
+.select-delete {
+  border: 0; border-radius: 999px; padding: 12px 20px; font-weight: 600;
+  background: var(--bad); color: #fff; cursor: pointer;
+}
+.select-delete:disabled { background: var(--fill); color: var(--secondary); cursor: default; }
+
 /* ---------- avviso breve ---------- */
 .toast {
   position: fixed; z-index: 40; left: 50%;
@@ -322,5 +373,8 @@ input, select { font: inherit; font-size: 17px; color: var(--text); }
   background: var(--glass-bg); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
   border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow);
   transition: opacity .2s, transform .2s;
+  display: flex; align-items: center; gap: 14px;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.show.has-action { pointer-events: auto; }
+.toast button { border: 0; background: none; color: var(--accent); font-weight: 600; font-size: 15px; padding: 2px 0; cursor: pointer; }
