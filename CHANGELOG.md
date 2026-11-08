@@ -1,5 +1,14 @@
 # Changelog — Flunora
 
+## 0.1.2
+- Impostazioni a schermo intero, aperte dall'ingranaggio in alto a destra, con intestazione in stile liquid glass
+- Tema scelto a mano: Automatico, Chiaro o Scuro (per dispositivo)
+- Sezioni della barra personalizzabili: da 1 a 4, attivabili con un interruttore e riordinabili trascinando ≡
+- Le sezioni scelte sono salvate su Supabase e uguali su PC e iPhone (script `supabase/migrations/0.1.2_user_settings.sql`)
+- Nuove sezioni segnaposto: Abbonamenti e Auto (pagina "In arrivo")
+- Voci "Coming Soon" aggiornate al nuovo piano: Categorie 0.2, Backup 0.3, Import 0.4, Periodici 0.5
+- Schema del database salvato nel repository (`supabase/`)
+
 ## 0.1.1
 - Eliminazione dei movimenti più semplice, in stile iPhone:
   - scorri un movimento verso sinistra per scoprire il pulsante rosso "Elimina"

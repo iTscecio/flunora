@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.1.1";
+const APP_VERSION = "0.1.2";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -23,6 +23,8 @@ const state = {
   selecting: false,                  // modalità "Seleziona" attiva
   selected: new Set(),               // id dei movimenti selezionati
   selectedMonth: null,
+  sections: [],                      // sezioni della barra: [{ id, on }] nell'ordine scelto
+  settingsSynced: false,
 };
 
 // ---------- utilità ----------
@@ -155,7 +157,8 @@ function traduciErrore(m) {
 // =========================================================
 async function startApp() {
   $("set-email").textContent = state.user.email || "";
-  await loadCategories();
+  await Promise.all([loadCategories(), loadSettings()]);
+  renderTabbar();
   route();
 }
 
@@ -167,19 +170,20 @@ async function loadCategories() {
 }
 const catById = (id) => state.categories.find((c) => c.id === id);
 
-// Indirizzi: #dashboard  #mesi  #mesi/2026-11  #impostazioni
+// Indirizzi: #dashboard  #mesi  #mesi/2026-11  #abbonamenti  #auto
+// Senza indirizzo valido si apre la prima sezione attiva nella barra.
 function route() {
   if (!state.user) return;
   const [page, arg] = location.hash.slice(1).split("/");
-  const p = ["dashboard", "mesi", "impostazioni"].includes(page) ? page : "dashboard";
+  const p = SECTIONS[page] ? page : firstSection();
   if (p === "mesi" && /^\d{4}-\d{2}$/.test(arg || "")) {
     const [y, m] = arg.split("-").map(Number);
     state.month = new Date(y, m - 1, 1);
   }
   state.page = p;
   setSelecting(false);
-  for (const id of ["dashboard", "mesi", "impostazioni"]) $("page-" + id).hidden = id !== p;
-  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.page === p));
+  for (const id of Object.keys(SECTIONS)) $("page-" + id).hidden = id !== p;
+  document.querySelectorAll("#tab-pill .tab").forEach((t) => t.classList.toggle("active", t.dataset.page === p));
   window.scrollTo(0, 0);
   if (p === "dashboard") loadDashboard();
   if (p === "mesi") loadMonth();
@@ -712,10 +716,230 @@ function refreshAfterChange(dateStr) {
 }
 
 // =========================================================
-//  IMPOSTAZIONI: voci in arrivo
+//  SEZIONI DELLA BARRA (0.1.2)
 // =========================================================
+const MAX_TABS = 4;
+const ICONS = {
+  dashboard: '<svg viewBox="0 0 24 24" class="fill"><rect x="4" y="12" width="4" height="8" rx="1"/><rect x="10" y="6" width="4" height="14" rx="1"/><rect x="16" y="9" width="4" height="11" rx="1"/></svg>',
+  mesi: '<svg viewBox="0 0 24 24" class="stroke"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>',
+  abbonamenti: '<svg viewBox="0 0 24 24" class="stroke"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg>',
+  auto: '<svg viewBox="0 0 24 24" class="stroke"><path d="M5 16V11l2-4.5h10L19 11v5"/><path d="M3.5 16h17M5 11h14"/><circle cx="7.5" cy="17.5" r="1.8"/><circle cx="16.5" cy="17.5" r="1.8"/></svg>',
+};
+const SECTIONS = {
+  dashboard:   { name: "Dashboard",   color: "#007aff" },
+  mesi:        { name: "Mesi",        color: "#34c759" },
+  abbonamenti: { name: "Abbonamenti", color: "#ff2d55", placeholder: true },
+  auto:        { name: "Auto",        color: "#ff9500", placeholder: true },
+};
+const DEFAULT_SECTIONS = [
+  { id: "dashboard", on: true }, { id: "mesi", on: true },
+  { id: "abbonamenti", on: false }, { id: "auto", on: false },
+];
+const LS_SECTIONS = "flunora.sections", LS_THEME = "flunora.theme";
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+
+// Tiene solo sezioni note, senza doppioni, e aggiunge in fondo quelle nuove
+function normalizeSections(list) {
+  const seen = new Set(), out = [];
+  for (const s of Array.isArray(list) ? list : []) {
+    if (SECTIONS[s?.id] && !seen.has(s.id)) { seen.add(s.id); out.push({ id: s.id, on: !!s.on }); }
+  }
+  for (const d of DEFAULT_SECTIONS) if (!seen.has(d.id)) out.push({ ...d, on: false });
+  let n = 0;
+  for (const s of out) if (s.on && ++n > MAX_TABS) s.on = false;
+  if (n === 0) out[0].on = true;
+  return out;
+}
+
+const firstSection = () => state.sections.find((s) => s.on)?.id || "dashboard";
+
+async function loadSettings() {
+  // prima la copia sul dispositivo (avvio veloce), poi quella su Supabase
+  let local = null;
+  try { local = JSON.parse(lsGet(LS_SECTIONS)); } catch {}
+  state.sections = normalizeSections(local || DEFAULT_SECTIONS);
+  const { data, error } = await sb.from("user_settings").select("data").maybeSingle();
+  if (error) {
+    state.settingsSynced = false;
+    if (/user_settings|relation|schema cache|PGRST205|42P01/i.test(error.message + (error.code || ""))) {
+      toast("Esegui lo script 0.1.2 in Supabase per sincronizzare le sezioni");
+    }
+    return;
+  }
+  state.settingsSynced = true;
+  if (data?.data?.sections) {
+    state.sections = normalizeSections(data.data.sections);
+    lsSet(LS_SECTIONS, JSON.stringify(state.sections));
+  }
+}
+
+let saveTimer;
+function saveSections() {
+  lsSet(LS_SECTIONS, JSON.stringify(state.sections));
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    const { error } = await sb.from("user_settings").upsert({
+      user_id: state.user.id,
+      data: { sections: state.sections },
+      updated_at: new Date().toISOString(),
+    });
+    if (error) toast("Sezioni salvate solo su questo dispositivo");
+  }, 400);
+}
+
+function renderTabbar() {
+  const pill = $("tab-pill");
+  pill.replaceChildren();
+  const on = state.sections.filter((s) => s.on);
+  pill.style.setProperty("--n", on.length);
+  for (const s of on) {
+    const a = el("a", "tab");
+    a.href = "#" + s.id;
+    a.dataset.page = s.id;
+    a.innerHTML = ICONS[s.id];
+    a.append(el("span", null, SECTIONS[s.id].name));
+    if (s.id === state.page) a.classList.add("active");
+    pill.append(a);
+  }
+}
+
+// =========================================================
+//  TEMA (per dispositivo)
+// =========================================================
+function applyTheme(theme) {
+  const t = ["light", "dark"].includes(theme) ? theme : "auto";
+  if (t === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", t);
+  // colore della barra di stato su iPhone
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
+    if (!m.dataset.orig) m.dataset.orig = m.content;
+    m.content = t === "auto" ? m.dataset.orig : t === "dark" ? "#000000" : "#f2f2f7";
+  });
+  document.querySelectorAll("#theme-seg button").forEach((b) => b.classList.toggle("on", b.dataset.theme === t));
+  return t;
+}
+applyTheme(lsGet(LS_THEME));
+
+$("theme-seg").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-theme]");
+  if (!b) return;
+  lsSet(LS_THEME, applyTheme(b.dataset.theme));
+});
+
+// =========================================================
+//  PANNELLO IMPOSTAZIONI
+// =========================================================
+$("btn-settings").addEventListener("click", openSettings);
+$("settings-done").addEventListener("click", closeSettings);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("settings").classList.contains("open")) closeSettings(); });
+
+function openSettings() {
+  setSelecting(false);
+  renderSectionsList();
+  $("settings").scrollTop = 0;
+  $("settings").classList.add("open");
+  $("settings").setAttribute("aria-hidden", "false");
+}
+function closeSettings() {
+  $("settings").classList.remove("open");
+  $("settings").setAttribute("aria-hidden", "true");
+  // se la sezione aperta è stata tolta dalla barra, passa alla prima attiva
+  const current = state.sections.find((s) => s.id === state.page);
+  if (!current?.on) location.hash = firstSection();
+}
+
 document.querySelectorAll(".settings li.soon").forEach((li) => {
   li.addEventListener("click", () => toast(`Arriva con la versione ${li.dataset.ver}`));
 });
+
+function renderSectionsList() {
+  const ul = $("sections-list");
+  ul.replaceChildren();
+  for (const s of state.sections) {
+    const info = SECTIONS[s.id];
+    const li = el("li");
+    li.dataset.id = s.id;
+
+    const ico = el("span", "ico");
+    ico.style.setProperty("--c", info.color);
+    ico.innerHTML = ICONS[s.id];
+
+    const label = el("span", "label");
+    label.append(el("span", null, info.name));
+    if (info.placeholder) label.append(el("small", null, "Segnaposto · in arrivo"));
+
+    const sw = el("label", "switch");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = s.on;
+    input.setAttribute("aria-label", `Mostra ${info.name} nella barra`);
+    input.addEventListener("change", () => toggleSection(s.id, input));
+    sw.append(input, el("span"));
+
+    const handle = el("span", "handle");
+    handle.setAttribute("aria-label", `Sposta ${info.name}`);
+    handle.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 8h14M5 12h14M5 16h14"/></svg>';
+    attachSort(li, handle);
+
+    li.append(ico, label, sw, handle);
+    ul.append(li);
+  }
+}
+
+function toggleSection(id, input) {
+  const s = state.sections.find((x) => x.id === id);
+  const active = state.sections.filter((x) => x.on).length;
+  if (input.checked && active >= MAX_TABS) {
+    input.checked = false;
+    return toast(`Al massimo ${MAX_TABS} sezioni nella barra`);
+  }
+  if (!input.checked && active <= 1) {
+    input.checked = true;
+    return toast("Serve almeno una sezione nella barra");
+  }
+  s.on = input.checked;
+  renderTabbar();
+  saveSections();
+}
+
+// Trascinamento con la maniglia ≡: la riga segue il dito e cambia posto
+function attachSort(li, handle) {
+  handle.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const ul = li.parentElement;
+    const pid = e.pointerId;
+    li.classList.add("dragging");
+
+    // gli eventi si ascoltano sulla pagina: spostando la riga nel DOM la maniglia perderebbe il dito
+    const move = (ev) => {
+      if (ev.pointerId !== pid) return;
+      ev.preventDefault();
+      const others = [...ul.children].filter((x) => x !== li);
+      let before = null;
+      for (const o of others) {
+        const r = o.getBoundingClientRect();
+        if (ev.clientY < r.top + r.height / 2) { before = o; break; }
+      }
+      if (before !== li.nextElementSibling && !(before === null && li === ul.lastElementChild)) {
+        ul.insertBefore(li, before);
+      }
+    };
+    const up = (ev) => {
+      if (ev.pointerId !== pid) return;
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      document.removeEventListener("pointercancel", up);
+      li.classList.remove("dragging");
+      const order = [...ul.children].map((x) => x.dataset.id);
+      const changed = order.join() !== state.sections.map((s) => s.id).join();
+      state.sections.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+      if (changed) { renderTabbar(); saveSections(); }
+    };
+    document.addEventListener("pointermove", move, { passive: false });
+    document.addEventListener("pointerup", up);
+    document.addEventListener("pointercancel", up);
+  });
+}
 
 init();
