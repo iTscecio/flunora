@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.2.2";
+const APP_VERSION = "0.2.3";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -167,6 +167,7 @@ async function startApp() {
   await Promise.all([loadCategories(), loadSettings()]);
   renderTabbar();
   route();
+  maybeShowWhatsNew();
 }
 
 async function loadCategories() {
@@ -1590,5 +1591,74 @@ $("budget-remove").addEventListener("click", () => {
     } }],
   });
 });
+
+// =========================================================
+//  NOVITÀ (0.2.3): note di rilascio
+// =========================================================
+const LS_SEEN = "flunora.seenVersion";
+
+function releaseBlock(r, isCurrent) {
+  const sec = el("section", "release");
+  const head = el("div", "release-head");
+  const h = el("h3", null, r.version);
+  if (isCurrent) h.append(el("span", "now", "attuale"));
+  head.append(h, el("span", null, r.date));
+  const ul = el("ul", "card release-items");
+  ul.append(...r.items.map((t) => el("li", null, t)));
+  sec.append(head, ul);
+  return sec;
+}
+
+function openReleases(fromWhatsNew = false) {
+  $("releases-back").innerHTML = fromWhatsNew ? "&lsaquo; Indietro" : "&lsaquo; Impostazioni";
+  $("releases-list").replaceChildren(...RELEASES.map((r, i) => releaseBlock(r, i === 0)));
+  $("releases").scrollTop = 0;
+  $("releases").classList.add("open");
+  $("releases").setAttribute("aria-hidden", "false");
+}
+function closeReleases() {
+  $("releases").classList.remove("open");
+  $("releases").setAttribute("aria-hidden", "true");
+}
+$("open-whatsnew").addEventListener("click", () => openReleases(false));
+$("releases-back").addEventListener("click", closeReleases);
+
+// Al primo avvio e dopo ogni aggiornamento: le novità non ancora viste
+function maybeShowWhatsNew() {
+  const seen = lsGet(LS_SEEN);
+  if (seen === APP_VERSION) return;
+  const seenIdx = RELEASES.findIndex((r) => r.version === seen);
+  // versioni più recenti di quella vista (al primo avvio solo l'attuale)
+  const fresh = seen && seenIdx > 0 ? RELEASES.slice(0, seenIdx) : RELEASES.slice(0, 1);
+  const first = !seen;
+
+  $("whatsnew-title").textContent = first ? "Benvenuto in Flunora" : "Novità di Flunora";
+  $("whatsnew-sub").textContent = fresh.length > 1
+    ? `Ecco cosa è cambiato dalla versione ${seen}`
+    : `Versione ${fresh[0].version} · ${fresh[0].date}`;
+  const list = $("whatsnew-list");
+  list.replaceChildren();
+  for (const r of fresh) {
+    if (fresh.length > 1) {
+      const li = el("li", "ver-sep", `Versione ${r.version}`);
+      list.append(li);
+    }
+    list.append(...r.items.map((t) => el("li", null, t)));
+  }
+  $("whatsnew").scrollTop = 0;
+  $("whatsnew").classList.add("open");
+  $("whatsnew").setAttribute("aria-hidden", "false");
+  $("whatsnew-backdrop").classList.add("open");
+}
+
+function closeWhatsNew() {
+  lsSet(LS_SEEN, APP_VERSION);
+  $("whatsnew").classList.remove("open");
+  $("whatsnew").setAttribute("aria-hidden", "true");
+  $("whatsnew-backdrop").classList.remove("open");
+}
+$("whatsnew-ok").addEventListener("click", closeWhatsNew);
+$("whatsnew-backdrop").addEventListener("click", closeWhatsNew);
+$("whatsnew-all").addEventListener("click", () => { closeWhatsNew(); openReleases(true); });
 
 init();

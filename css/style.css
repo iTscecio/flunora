@@ -654,3 +654,30 @@ input, select { font: inherit; font-size: 17px; color: var(--text); }
 .leg { gap: 2px 6px; }
 .leg button { gap: 7px; padding: 6px 4px; font-size: 14px; }
 .leg button b { font-size: 13px; }
+
+/* =========================================================
+   0.2.3 — NOVITÀ
+   ========================================================= */
+.releases { gap: 18px; }
+.release { display: grid; gap: 8px; }
+.release-head { display: flex; justify-content: space-between; align-items: baseline; padding: 0 4px; }
+.release-head h3 { font-size: 20px; font-weight: 700; }
+.release-head span { font-size: 14px; color: var(--secondary); }
+.release-head .now { font-size: 12px; font-weight: 600; color: #fff; background: var(--accent); border-radius: 999px; padding: 3px 9px; margin-left: 8px; vertical-align: 3px; }
+.release-items { list-style: none; margin: 0; padding: 6px 16px; display: grid; }
+.release-items li { position: relative; padding: 9px 0 9px 20px; font-size: 16px; line-height: 1.35; }
+.release-items li + li { border-top: .5px solid var(--separator); }
+.release-items li::before {
+  content: ""; position: absolute; left: 2px; top: 16px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+}
+
+.whatsnew {
+  z-index: 52; align-items: stretch; text-align: center; gap: 12px;
+  top: calc(env(safe-area-inset-top) + 64px);
+}
+.whatsnew .wn-icon { align-self: center; border-radius: 15px; box-shadow: 0 6px 18px rgba(0, 0, 0, .15); margin-top: 6px; }
+.whatsnew h1 { font-size: 30px; font-weight: 700; }
+.whatsnew .release-items { text-align: left; }
+.whatsnew .btn-primary { margin-top: auto; }
+.release-items li.ver-sep { padding-left: 0; font-weight: 700; font-size: 15px; color: var(--secondary); }
+.release-items li.ver-sep::before { display: none; }

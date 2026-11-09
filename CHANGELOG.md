@@ -1,5 +1,9 @@
 # Changelog — Flunora
 
+## 0.2.3
+- Pagina "Novità" in Impostazioni › Informazioni con le note di rilascio di tutte le versioni (`js/releases.js`)
+- Al primo avvio e dopo ogni aggiornamento compare da solo un pannello con le novità non ancora viste (anche più versioni insieme)
+
 ## 0.2.2
 - Nuova pagina Mesi in stile "Carte"
   - carta "Ti restano questo mese": budget − uscite, oppure (senza budget) entrate − uscite − investiti; barra di quanto speso, giorni alla fine del mese; diventa arancione se si va oltre

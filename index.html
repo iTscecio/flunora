@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611092229">
+  <link rel="stylesheet" href="css/style.css?v=202611092251">
 </head>
 <body>
 
@@ -204,6 +204,8 @@
         <ul class="card list settings">
           <li><span class="ico" style="--c:#8e8e93"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 11v5M12 8h.01"/></svg></span>
             <span class="label">Versione</span><span id="set-version" class="value"></span></li>
+          <li class="tap" id="open-whatsnew"><span class="ico" style="--c:#ff9500"><svg viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg></span>
+            <span class="label">Novità</span><span class="chev">&rsaquo;</span></li>
         </ul>
         <p class="secondary small center">Flunora &middot; dati protetti su Supabase</p>
       </div>
@@ -277,6 +279,28 @@
         <ul id="cat-archived" class="card list settings cat-list" hidden></ul>
         <p class="secondary small foot">Movimenti e totale dell'anno in corso. Trascina &equiv; per cambiare l'ordine.</p>
       </div>
+    </div>
+
+    <!-- ---------- NOVITÀ: tutte le versioni (0.2.3) ---------- -->
+    <div id="releases" class="settings-panel sub-panel" aria-hidden="true">
+      <header class="glass settings-head">
+        <button type="button" id="releases-back" class="link-btn back-btn">&lsaquo; Impostazioni</button>
+        <h2>Novità</h2>
+        <span></span>
+      </header>
+      <div id="releases-list" class="settings-body releases"></div>
+    </div>
+
+    <!-- ---------- NOVITÀ: pannello dopo un aggiornamento ---------- -->
+    <div id="whatsnew-backdrop" class="sheet-backdrop topmost"></div>
+    <div id="whatsnew" class="sheet whatsnew" aria-hidden="true" role="dialog" aria-labelledby="whatsnew-title">
+      <div class="grabber"></div>
+      <img src="icons/icon-192.png" alt="" class="wn-icon" width="64" height="64">
+      <h1 id="whatsnew-title">Novità</h1>
+      <p id="whatsnew-sub" class="secondary center"></p>
+      <ul id="whatsnew-list" class="card release-items"></ul>
+      <button type="button" id="whatsnew-all" class="btn-plain">Tutte le versioni</button>
+      <button type="button" id="whatsnew-ok" class="btn-primary">Continua</button>
     </div>
 
     <!-- ---------- EDITOR CATEGORIA (pannello dal basso) ---------- -->
@@ -354,8 +378,9 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611092229"></script>
-  <script src="js/icons.js?v=202611092229"></script>
-  <script src="js/app.js?v=202611092229"></script>
+  <script src="js/config.js?v=202611092251"></script>
+  <script src="js/releases.js?v=202611092251"></script>
+  <script src="js/icons.js?v=202611092251"></script>
+  <script src="js/app.js?v=202611092251"></script>
 </body>
 </html>
