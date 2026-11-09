@@ -1,5 +1,9 @@
 # Changelog — Flunora
 
+## 0.2.1
+- Il pannello + (nuovo movimento) e l'editor di una nuova categoria non aprono più la tastiera da soli: si apre solo toccando un campo
+- Se premi "Salva" con un campo vuoto o non valido, l'app porta comunque il cursore lì per correggerlo
+
 ## 0.2.0
 - Gestione categorie in Impostazioni › Categorie, divisa per Uscite, Entrate e Investimenti
 - Per ogni categoria: numero di movimenti e totale dell'anno in corso

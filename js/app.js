@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.2.0";
+const APP_VERSION = "0.2.1";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -673,7 +673,7 @@ function openSheet(tx) {
   $("sheet").setAttribute("aria-hidden", "false");
   $("sheet-backdrop").classList.add("open");
   $("sheet").scrollTop = 0;
-  if (!tx) $("f-amount").focus({ preventScroll: true });
+  // 0.2.1: niente cursore automatico, la tastiera si apre solo toccando un campo
 }
 
 function closeSheet() {
@@ -1141,7 +1141,7 @@ function openCatEditor(c, kind, fromMovement = false) {
   $("cat-sheet").classList.add("open");
   $("cat-sheet").setAttribute("aria-hidden", "false");
   $("cat-backdrop").classList.add("open");
-  if (!c) $("cat-name").focus({ preventScroll: true });
+  // 0.2.1: niente cursore automatico, la tastiera si apre solo toccando il nome
 }
 
 function closeCatEditor() {
