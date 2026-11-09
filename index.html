@@ -167,8 +167,8 @@
 
         <h3 class="section-title">Dati</h3>
         <ul class="card list settings">
-          <li class="soon" data-ver="0.2"><span class="ico" style="--c:#ff9500"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span>
-            <span class="label">Categorie</span><span class="badge">Coming Soon</span></li>
+          <li class="tap" id="open-categories"><span class="ico" style="--c:#ff9500"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span>
+            <span class="label">Categorie</span><span class="chev">&rsaquo;</span></li>
           <li class="soon" data-ver="0.3"><span class="ico" style="--c:#34c759"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span>
             <span class="label">Backup e ripristino</span><span class="badge">Coming Soon</span></li>
           <li class="soon" data-ver="0.4"><span class="ico" style="--c:#30b0c7"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span>
@@ -240,6 +240,69 @@
       <button type="button" id="sheet-delete" class="btn-danger" hidden>Elimina movimento</button>
     </form>
 
+    <!-- ---------- CATEGORIE (0.2.0): pagina dentro le Impostazioni ---------- -->
+    <div id="categories" class="settings-panel sub-panel" aria-hidden="true">
+      <header class="glass settings-head">
+        <button type="button" id="categories-back" class="link-btn back-btn">&lsaquo; Impostazioni</button>
+        <h2>Categorie</h2>
+        <span></span>
+      </header>
+      <div class="settings-body">
+        <div class="segmented" id="cat-kind-seg">
+          <button type="button" data-kind="uscita">Uscite</button>
+          <button type="button" data-kind="entrata">Entrate</button>
+          <button type="button" data-kind="investimento">Investimenti</button>
+        </div>
+        <ul id="cat-list" class="card list settings sortable cat-list"></ul>
+        <ul class="card list settings">
+          <li class="tap" id="cat-new"><span class="label accent-text">+ Nuova categoria</span></li>
+          <li class="tap" id="cat-archived-toggle"><span class="label">Archiviate</span><span id="cat-archived-count" class="value"></span><span class="chev" id="cat-archived-chev">&rsaquo;</span></li>
+        </ul>
+        <ul id="cat-archived" class="card list settings cat-list" hidden></ul>
+        <p class="secondary small foot">Movimenti e totale dell'anno in corso. Trascina &equiv; per cambiare l'ordine.</p>
+      </div>
+    </div>
+
+    <!-- ---------- EDITOR CATEGORIA (pannello dal basso) ---------- -->
+    <div id="cat-backdrop" class="sheet-backdrop top"></div>
+    <form id="cat-sheet" class="sheet top" aria-hidden="true" novalidate>
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <button type="button" id="cat-cancel" class="link-btn">Annulla</button>
+        <h2 id="cat-title">Nuova categoria</h2>
+        <button type="submit" id="cat-save" class="link-btn strong">Salva</button>
+      </div>
+      <div id="cat-preview" class="cat-preview"></div>
+      <div class="group">
+        <label class="group-row"><span>Nome</span><input id="cat-name" maxlength="30" placeholder="Es. Palestra" autocomplete="off"></label>
+      </div>
+      <div class="segmented" id="cat-edit-kind">
+        <button type="button" data-kind="uscita">Uscita</button>
+        <button type="button" data-kind="entrata">Entrata</button>
+        <button type="button" data-kind="investimento">Investimento</button>
+      </div>
+      <p id="cat-kind-fixed" class="secondary small foot"></p>
+      <h3 class="section-title">Icona</h3>
+      <div id="cat-icons" class="card icon-grid"></div>
+      <h3 class="section-title">Colore</h3>
+      <div id="cat-colors" class="card color-row"></div>
+      <p id="cat-msg" class="msg" role="status"></p>
+      <div id="cat-actions" class="group actions">
+        <button type="button" id="cat-archive" class="action-row">Archivia categoria</button>
+        <button type="button" id="cat-delete" class="action-row danger">Elimina categoria</button>
+      </div>
+    </form>
+
+    <!-- ---------- MENU DI SCELTA (stile iOS) ---------- -->
+    <div id="action-backdrop" class="sheet-backdrop topmost"></div>
+    <div id="action-sheet" class="action-sheet" aria-hidden="true" role="dialog">
+      <div class="action-group">
+        <div class="action-head"><strong id="action-title"></strong><span id="action-msg"></span></div>
+        <div id="action-list"></div>
+      </div>
+      <button type="button" id="action-cancel" class="action-cancel">Annulla</button>
+    </div>
+
     <div id="toast" class="toast" role="status">
       <span id="toast-text"></span>
       <button type="button" id="toast-action" hidden></button>
@@ -248,6 +311,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/config.js"></script>
+  <script src="js/icons.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

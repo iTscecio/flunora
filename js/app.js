@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.1.2";
+const APP_VERSION = "0.2.0";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -169,6 +169,14 @@ async function loadCategories() {
   fillFilterSelect();
 }
 const catById = (id) => state.categories.find((c) => c.id === id);
+
+// quadratino colorato con l'icona della categoria (size: "", "sm", "lg")
+function catIcon(c, size = "") {
+  const s = el("span", "cat-ico" + (size ? " " + size : ""));
+  s.style.setProperty("--c", c?.color || "#8e8e93");
+  s.innerHTML = iconSvg(c?.icon || "tag");
+  return s;
+}
 
 // Indirizzi: #dashboard  #mesi  #mesi/2026-11  #abbonamenti  #auto
 // Senza indirizzo valido si apre la prima sezione attiva nella barra.
@@ -388,8 +396,7 @@ function renderDonut() {
   const ul = el("ul", "legend");
   for (const it of items) {
     const li = el("li");
-    const dot = el("span", "dot"); dot.style.background = it.cat?.color || "#8e8e93";
-    li.append(dot, el("span", "name", it.cat?.name || "?"), el("span", "val", fmt(it.cents)),
+    li.append(catIcon(it.cat, "sm"), el("span", "name", it.cat?.name || "?"), el("span", "val", fmt(it.cents)),
       el("span", "pct", Math.round((it.cents / total) * 100) + "%"));
     ul.append(li);
   }
@@ -439,15 +446,14 @@ function renderList() {
     check.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
     const grow = el("div", "grow");
     const sub = el("div", "sub");
-    const dot = el("span", "dot"); dot.style.background = cat?.color || "#8e8e93";
     const [y, m, d] = tx.date.split("-").map(Number);
     const giorno = new Date(y, m - 1, d).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
     const tipo = { entrata: "Entrata", uscita: "", investimento: "Investimento" }[tx.kind];
-    sub.append(dot, document.createTextNode([giorno, tipo, cat?.name].filter(Boolean).join(" · ")));
+    sub.append(document.createTextNode([giorno, tipo, cat?.name].filter(Boolean).join(" · ")));
     grow.append(el("div", "title", tx.description || cat?.name || "Movimento"), sub);
     const amt = el("span", "amt" + (tx.kind === "entrata" ? " in" : ""),
       (tx.kind === "entrata" ? "+ " : "− ") + fmt(tx.amount_cents));
-    content.append(check, grow, amt);
+    content.append(check, catIcon(cat), grow, amt);
 
     li.append(del, content);
     attachSwipe(li, content, tx);
@@ -607,25 +613,36 @@ $("kind-seg").addEventListener("click", (e) => {
 function setKind(kind) {
   state.kind = kind;
   document.querySelectorAll("#kind-seg button").forEach((b) => b.classList.toggle("on", b.dataset.kind === kind));
-  const cats = state.categories.filter((c) => c.kind === kind);
+  const cats = chipCategories(kind);
   if (!cats.some((c) => c.id === state.categoryId)) {
-    state.categoryId = state.lastCategory[kind] || cats[0]?.id || null;
+    const last = state.lastCategory[kind];
+    state.categoryId = cats.some((c) => c.id === last) ? last : cats[0]?.id || null;
   }
   renderChips();
+}
+
+// categorie selezionabili: quelle attive, più quella del movimento in modifica se archiviata
+function chipCategories(kind) {
+  return state.categories.filter((c) => c.kind === kind &&
+    (!c.archived || c.id === state.editing?.category_id));
 }
 
 function renderChips() {
   const box = $("cat-chips");
   box.replaceChildren();
-  for (const c of state.categories.filter((c) => c.kind === state.kind)) {
+  for (const c of chipCategories(state.kind)) {
     const b = el("button", "chip" + (c.id === state.categoryId ? " on" : ""));
     b.type = "button";
     b.style.setProperty("--chip-c", c.color);
-    const dot = el("span", "dot"); dot.style.background = c.color;
-    b.append(dot, document.createTextNode(c.name));
+    b.append(catIcon(c, "sm"), document.createTextNode(c.name));
     b.addEventListener("click", () => { state.categoryId = c.id; renderChips(); });
     box.append(b);
   }
+  // crea una categoria senza lasciare il pannello
+  const add = el("button", "chip new", "+ Nuova");
+  add.type = "button";
+  add.addEventListener("click", () => openCatEditor(null, state.kind, true));
+  box.append(add);
 }
 
 // data proposta: oggi se si guarda il mese corrente, altrimenti il 1° del mese mostrato
@@ -880,7 +897,11 @@ function renderSectionsList() {
     const handle = el("span", "handle");
     handle.setAttribute("aria-label", `Sposta ${info.name}`);
     handle.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 8h14M5 12h14M5 16h14"/></svg>';
-    attachSort(li, handle);
+    attachSort(li, handle, (order) => {
+      const changed = order.join() !== state.sections.map((x) => x.id).join();
+      state.sections.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+      if (changed) { renderTabbar(); saveSections(); }
+    });
 
     li.append(ico, label, sw, handle);
     ul.append(li);
@@ -903,8 +924,9 @@ function toggleSection(id, input) {
   saveSections();
 }
 
-// Trascinamento con la maniglia ≡: la riga segue il dito e cambia posto
-function attachSort(li, handle) {
+// Trascinamento con la maniglia ≡: la riga segue il dito e cambia posto.
+// Al rilascio chiama onDrop con il nuovo ordine degli id.
+function attachSort(li, handle, onDrop) {
   handle.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     const ul = li.parentElement;
@@ -931,15 +953,355 @@ function attachSort(li, handle) {
       document.removeEventListener("pointerup", up);
       document.removeEventListener("pointercancel", up);
       li.classList.remove("dragging");
-      const order = [...ul.children].map((x) => x.dataset.id);
-      const changed = order.join() !== state.sections.map((s) => s.id).join();
-      state.sections.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-      if (changed) { renderTabbar(); saveSections(); }
+      onDrop([...ul.children].map((x) => x.dataset.id));
     };
     document.addEventListener("pointermove", move, { passive: false });
     document.addEventListener("pointerup", up);
     document.addEventListener("pointercancel", up);
   });
+  // il tocco sulla maniglia non apre la riga
+  handle.addEventListener("click", (e) => e.stopPropagation());
+}
+
+// =========================================================
+//  MENU DI SCELTA (stile iOS)
+// =========================================================
+function actionSheet({ title = "", message = "", actions = [] }) {
+  $("action-title").textContent = title;
+  $("action-msg").textContent = message;
+  const list = $("action-list");
+  list.replaceChildren();
+  for (const a of actions) {
+    const b = el("button", "opt" + (a.danger ? " danger" : ""));
+    b.type = "button";
+    if (a.category) b.append(catIcon(a.category, "sm"));
+    b.append(document.createTextNode(a.label));
+    b.addEventListener("click", () => { closeActionSheet(); a.onClick(); });
+    list.append(b);
+  }
+  $("action-sheet").classList.add("open");
+  $("action-sheet").setAttribute("aria-hidden", "false");
+  $("action-backdrop").classList.add("open");
+}
+function closeActionSheet() {
+  $("action-sheet").classList.remove("open");
+  $("action-sheet").setAttribute("aria-hidden", "true");
+  $("action-backdrop").classList.remove("open");
+}
+$("action-cancel").addEventListener("click", closeActionSheet);
+$("action-backdrop").addEventListener("click", closeActionSheet);
+
+// =========================================================
+//  CATEGORIE (0.2.0)
+// =========================================================
+const KIND_ONE = { uscita: "Uscita", entrata: "Entrata", investimento: "Investimento" };
+state.catKind = "uscita";
+state.catStats = new Map();
+state.statsMissing = false;
+state.showArchived = false;
+state.catEdit = null;
+
+// errore dovuto allo script 0.2.0 non ancora eseguito su Supabase?
+const needsMigration = (err) =>
+  /icon|archived|category_stats|delete_category|reorder_categories|schema cache|does not exist|PGRST20|42703|42P01|42883/i
+    .test(`${err?.message} ${err?.code}`);
+function dbError(prefix, err) {
+  toast(needsMigration(err) ? "Esegui lo script 0.2.0 in Supabase" : prefix + traduciErrore(err.message));
+}
+
+function sortCategories() {
+  state.categories.sort((a, b) => a.kind.localeCompare(b.kind) || (a.sort_order ?? 0) - (b.sort_order ?? 0));
+}
+
+// aggiorna tutto ciò che mostra le categorie
+function afterCategoriesChanged() {
+  sortCategories();
+  fillFilterSelect();
+  if ($("categories").classList.contains("open")) renderCatPage();
+  if ($("sheet").classList.contains("open")) renderChips();
+  if (state.page === "mesi") { renderDonut(); renderList(); }
+}
+
+// ---------- pagina Categorie ----------
+$("open-categories").addEventListener("click", openCategories);
+$("categories-back").addEventListener("click", closeCategories);
+$("cat-new").addEventListener("click", () => openCatEditor(null, state.catKind));
+$("cat-archived-toggle").addEventListener("click", () => { state.showArchived = !state.showArchived; renderCatPage(); });
+$("cat-kind-seg").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-kind]");
+  if (!b) return;
+  state.catKind = b.dataset.kind;
+  state.showArchived = false;
+  renderCatPage();
+});
+
+async function openCategories() {
+  state.showArchived = false;
+  renderCatPage();
+  $("categories").scrollTop = 0;
+  $("categories").classList.add("open");
+  $("categories").setAttribute("aria-hidden", "false");
+  await loadCatStats();
+  renderCatPage();
+}
+function closeCategories() {
+  $("categories").classList.remove("open");
+  $("categories").setAttribute("aria-hidden", "true");
+}
+
+async function loadCatStats() {
+  const { data, error } = await sb.from("category_stats").select("category_id, n, total_cents");
+  state.catStats = new Map();
+  state.statsMissing = !!error;
+  if (error) return;
+  for (const r of data) state.catStats.set(r.category_id, { n: Number(r.n), total: Number(r.total_cents) });
+}
+
+function statsText(c) {
+  if (state.statsMissing) return "";
+  const s = state.catStats.get(c.id);
+  if (!s) return "Nessun movimento quest'anno";
+  return `${s.n} ${s.n === 1 ? "movimento" : "movimenti"} · ${fmt(s.total)}`;
+}
+
+function catRow(c, sortable) {
+  const li = el("li");
+  li.dataset.id = c.id;
+  const label = el("span", "label");
+  label.append(el("span", null, c.name));
+  const st = statsText(c);
+  if (st || c.archived) label.append(el("small", null, c.archived ? ["Archiviata", st].filter(Boolean).join(" · ") : st));
+  li.append(catIcon(c), label);
+  if (sortable) {
+    const handle = el("span", "handle");
+    handle.setAttribute("aria-label", `Sposta ${c.name}`);
+    handle.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 8h14M5 12h14M5 16h14"/></svg>';
+    attachSort(li, handle, saveCatOrder);
+    li.append(handle);
+  } else {
+    li.append(el("span", "chev", "›"));
+  }
+  li.addEventListener("click", () => openCatEditor(c));
+  return li;
+}
+
+function renderCatPage() {
+  document.querySelectorAll("#cat-kind-seg button").forEach((b) => b.classList.toggle("on", b.dataset.kind === state.catKind));
+  const all = state.categories.filter((c) => c.kind === state.catKind);
+  const active = all.filter((c) => !c.archived), archived = all.filter((c) => c.archived);
+
+  const ul = $("cat-list");
+  ul.replaceChildren(...active.map((c) => catRow(c, true)));
+  ul.hidden = active.length === 0;
+
+  $("cat-archived-count").textContent = archived.length ? archived.length : "Nessuna";
+  $("cat-archived-chev").style.transform = state.showArchived && archived.length ? "rotate(90deg)" : "";
+  const arch = $("cat-archived");
+  arch.replaceChildren(...archived.map((c) => catRow(c, false)));
+  arch.hidden = !state.showArchived || archived.length === 0;
+}
+
+async function saveCatOrder(order) {
+  const kindIds = state.categories.filter((c) => c.kind === state.catKind && !c.archived).map((c) => c.id);
+  if (order.join() === kindIds.join()) return;
+  order.forEach((id, i) => { const c = catById(id); if (c) c.sort_order = i + 1; });
+  afterCategoriesChanged();
+  const { error } = await sb.rpc("reorder_categories", { ids: order });
+  if (error) dbError("Ordine non salvato: ", error);
+}
+
+// ---------- editor categoria ----------
+$("cat-cancel").addEventListener("click", closeCatEditor);
+$("cat-backdrop").addEventListener("click", closeCatEditor);
+$("cat-name").addEventListener("input", renderCatPreview);
+$("cat-edit-kind").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-kind]");
+  if (!b || !state.catEdit) return;
+  state.catEdit.kind = b.dataset.kind;
+  renderCatEditor();
+});
+
+function openCatEditor(c, kind, fromMovement = false) {
+  state.catEdit = {
+    c, fromMovement,
+    kind: c?.kind || kind || "uscita",
+    icon: c?.icon || "tag",
+    color: c?.color || CATEGORY_COLORS[6],
+  };
+  $("cat-title").textContent = c ? "Modifica categoria" : "Nuova categoria";
+  $("cat-name").value = c?.name || "";
+  $("cat-edit-kind").hidden = !!c;
+  $("cat-kind-fixed").hidden = !c;
+  $("cat-kind-fixed").textContent = c ? `Tipo: ${KIND_ONE[c.kind]} (non modificabile)` : "";
+  $("cat-actions").hidden = !c;
+  $("cat-archive").textContent = c?.archived ? "Ripristina categoria" : "Archivia categoria";
+  setMsg($("cat-msg"), "");
+  renderCatEditor();
+  $("cat-sheet").scrollTop = 0;
+  $("cat-sheet").classList.add("open");
+  $("cat-sheet").setAttribute("aria-hidden", "false");
+  $("cat-backdrop").classList.add("open");
+  if (!c) $("cat-name").focus({ preventScroll: true });
+}
+
+function closeCatEditor() {
+  $("cat-sheet").classList.remove("open");
+  $("cat-sheet").setAttribute("aria-hidden", "true");
+  $("cat-backdrop").classList.remove("open");
+  if ($("cat-sheet").contains(document.activeElement)) document.activeElement.blur();
+  state.catEdit = null;
+}
+
+function renderCatPreview() {
+  const e = state.catEdit;
+  if (!e) return;
+  $("cat-preview").replaceChildren(
+    catIcon({ color: e.color, icon: e.icon }, "lg"),
+    el("span", "name", $("cat-name").value.trim() || "Nome della categoria")
+  );
+}
+
+function renderCatEditor() {
+  const e = state.catEdit;
+  document.querySelectorAll("#cat-edit-kind button").forEach((b) => b.classList.toggle("on", b.dataset.kind === e.kind));
+  renderCatPreview();
+
+  const grid = $("cat-icons");
+  grid.replaceChildren();
+  for (const [key, ic] of Object.entries(CATEGORY_ICONS)) {
+    const b = el("button", key === e.icon ? "on" : "");
+    b.type = "button";
+    b.style.setProperty("--c", e.color);
+    b.innerHTML = iconSvg(key);
+    b.setAttribute("aria-label", ic.label);
+    b.title = ic.label;
+    b.addEventListener("click", () => { e.icon = key; renderCatEditor(); });
+    grid.append(b);
+  }
+
+  const row = $("cat-colors");
+  row.replaceChildren();
+  const colors = CATEGORY_COLORS.includes(e.color) ? CATEGORY_COLORS : [e.color, ...CATEGORY_COLORS];
+  for (const col of colors) {
+    const b = el("button", col === e.color ? "on" : "");
+    b.type = "button";
+    b.style.setProperty("--c", col);
+    b.setAttribute("aria-label", "Colore " + col);
+    b.addEventListener("click", () => { e.color = col; renderCatEditor(); });
+    row.append(b);
+  }
+}
+
+$("cat-sheet").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const e = state.catEdit;
+  if (!e) return;
+  const msg = $("cat-msg");
+  const name = $("cat-name").value.trim().replace(/\s+/g, " ");
+  if (!name) { setMsg(msg, "Scrivi un nome per la categoria.", true); $("cat-name").focus(); return; }
+  const dup = state.categories.find((c) => c.kind === e.kind && c.id !== e.c?.id && c.name.toLowerCase() === name.toLowerCase());
+  if (dup) {
+    setMsg(msg, dup.archived
+      ? "C'è già una categoria archiviata con questo nome: puoi ripristinarla da Archiviate."
+      : "Esiste già una categoria con questo nome.", true);
+    return;
+  }
+
+  const btn = $("cat-save");
+  btn.disabled = true;
+  let res;
+  if (e.c) {
+    res = await sb.from("categories").update({ name, icon: e.icon, color: e.color }).eq("id", e.c.id);
+  } else {
+    const maxOrder = Math.max(0, ...state.categories.filter((c) => c.kind === e.kind).map((c) => c.sort_order || 0));
+    res = await sb.from("categories")
+      .insert({ name, kind: e.kind, icon: e.icon, color: e.color, sort_order: maxOrder + 1 })
+      .select().single();
+  }
+  btn.disabled = false;
+  if (res.error) {
+    if (/duplicate|unique/i.test(res.error.message)) setMsg(msg, "Esiste già una categoria con questo nome.", true);
+    else if (needsMigration(res.error)) setMsg(msg, "Esegui prima lo script 0.2.0 in Supabase.", true);
+    else setMsg(msg, "Errore: " + traduciErrore(res.error.message), true);
+    return;
+  }
+
+  const created = e.c ? null : res.data;
+  closeCatEditor();
+  await loadCategories();
+  if (created && e.fromMovement) {
+    state.categoryId = created.id;
+    state.lastCategory[created.kind] = created.id;
+  }
+  afterCategoriesChanged();
+  toast(e.c ? "Categoria aggiornata" : "Categoria creata");
+});
+
+// ---------- archivia / ripristina ----------
+const activeOfKind = (kind, exceptId) => state.categories.filter((c) => c.kind === kind && !c.archived && c.id !== exceptId);
+
+$("cat-archive").addEventListener("click", () => {
+  const c = state.catEdit?.c;
+  if (c) setArchived(c, !c.archived);
+});
+
+async function setArchived(c, archived) {
+  if (archived && activeOfKind(c.kind, c.id).length === 0) {
+    return toast("Serve almeno una categoria attiva per ogni tipo");
+  }
+  const { error } = await sb.from("categories").update({ archived }).eq("id", c.id);
+  if (error) return dbError("Errore: ", error);
+  closeCatEditor();
+  await loadCategories();
+  afterCategoriesChanged();
+  toast(archived ? `"${c.name}" archiviata` : `"${c.name}" ripristinata`);
+}
+
+// ---------- elimina ----------
+$("cat-delete").addEventListener("click", async () => {
+  const c = state.catEdit?.c;
+  if (!c) return;
+  const others = activeOfKind(c.kind, c.id);
+  const { count, error } = await sb.from("transactions")
+    .select("id", { count: "exact", head: true }).eq("category_id", c.id);
+  if (error) return dbError("Errore: ", error);
+
+  if (!count) {
+    if (!c.archived && others.length === 0) return toast("Serve almeno una categoria attiva per ogni tipo");
+    return actionSheet({
+      title: `Eliminare "${c.name}"?`,
+      message: "Non ha movimenti.",
+      actions: [{ label: "Elimina categoria", danger: true, onClick: () => deleteCategory(c, null) }],
+    });
+  }
+
+  const actions = [];
+  if (others.length) actions.push({ label: "Sposta i movimenti ed elimina…", onClick: () => chooseTarget(c, others, count) });
+  if (!c.archived && others.length) actions.push({ label: "Archivia invece", onClick: () => setArchived(c, true) });
+  if (!actions.length) return toast("Crea prima un'altra categoria dello stesso tipo");
+  actionSheet({
+    title: `"${c.name}" ha ${count} ${count === 1 ? "movimento" : "movimenti"}`,
+    message: "Puoi spostarli in un'altra categoria e poi eliminarla, oppure archiviarla e tenere lo storico com'è.",
+    actions,
+  });
+});
+
+function chooseTarget(c, others, count) {
+  actionSheet({
+    title: `Sposta ${count} ${count === 1 ? "movimento" : "movimenti"} in…`,
+    message: `Poi "${c.name}" verrà eliminata.`,
+    actions: others.map((o) => ({ label: o.name, category: o, onClick: () => deleteCategory(c, o) })),
+  });
+}
+
+async function deleteCategory(c, target) {
+  const { error } = await sb.rpc("delete_category", { cat: c.id, move_to: target?.id ?? null });
+  if (error) return dbError("Eliminazione non riuscita: ", error);
+  closeCatEditor();
+  await Promise.all([loadCategories(), loadCatStats()]);
+  afterCategoriesChanged();
+  if (state.page === "mesi") loadMonth();
+  toast(target ? `Eliminata · movimenti spostati in ${target.name}` : "Categoria eliminata");
 }
 
 init();

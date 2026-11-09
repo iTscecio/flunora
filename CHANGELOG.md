@@ -1,5 +1,16 @@
 # Changelog — Flunora
 
+## 0.2.0
+- Gestione categorie in Impostazioni › Categorie, divisa per Uscite, Entrate e Investimenti
+- Per ogni categoria: numero di movimenti e totale dell'anno in corso
+- Nuova categoria e modifica: nome, icona (38 disegni) e colore (12 colori iOS); il tipo si sceglie solo alla creazione
+- Ordine delle categorie trascinando ≡
+- Archiviazione: la categoria sparisce dalle scelte ma lo storico resta; ripristino da "Archiviate"
+- Eliminazione: subito se non ha movimenti, altrimenti spostando i movimenti in un'altra categoria oppure archiviandola
+- "+ Nuova" tra le categorie del pannello +, con la nuova categoria già selezionata
+- Icone delle categorie nell'elenco movimenti, nel pannello + e nella legenda del grafico
+- Script `supabase/migrations/0.2.0_categorie.sql` (provato su PostgreSQL 16 con le regole di sicurezza attive)
+
 ## 0.1.2
 - Impostazioni a schermo intero, aperte dall'ingranaggio in alto a destra, con intestazione in stile liquid glass
 - Tema scelto a mano: Automatico, Chiaro o Scuro (per dispositivo)
