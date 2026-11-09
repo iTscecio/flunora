@@ -568,3 +568,18 @@ input, select { font: inherit; font-size: 17px; color: var(--text); }
 
 /* nei pannelli dal basso il contenuto scorre: nessun blocco deve restringersi */
 .sheet > * { flex-shrink: 0; }
+
+/* 0.2.1 — selettori a segmenti: la scelta attiva è un riquadro pieno e colorato */
+.segmented { background: var(--fill); }
+.segmented button { color: var(--text); transition: background .2s, color .2s; }
+.segmented button.on {
+  background: var(--accent); color: #fff; font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .18);
+}
+.segmented button.on[data-kind="uscita"] { background: var(--bad); }
+.segmented button.on[data-kind="entrata"] { background: #248a3d; }
+.segmented button.on[data-kind="investimento"] { background: #5856d6; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .segmented button.on[data-kind="entrata"] { background: #30a14e; }
+}
+:root[data-theme="dark"] .segmented button.on[data-kind="entrata"] { background: #30a14e; }
