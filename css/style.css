@@ -583,3 +583,74 @@ input, select { font: inherit; font-size: 17px; color: var(--text); }
   :root:not([data-theme="light"]) .segmented button.on[data-kind="entrata"] { background: #30a14e; }
 }
 :root[data-theme="dark"] .segmented button.on[data-kind="entrata"] { background: #30a14e; }
+
+/* =========================================================
+   0.2.2 — PAGINA MESI "CARTE" E BUDGET
+   ========================================================= */
+.herocard {
+  border-radius: 22px; padding: 20px; color: #fff; display: grid; gap: 6px;
+  background: linear-gradient(135deg, #0a84ff, #30b0c7);
+  box-shadow: 0 10px 30px rgba(0, 122, 255, .25);
+  transition: background .3s;
+}
+.herocard.over { background: linear-gradient(135deg, #ff9500, #ff3b30); box-shadow: 0 10px 30px rgba(255, 59, 48, .25); }
+.herocard .lbl { opacity: .9; font-size: 15px; }
+.herocard .big { font-size: min(40px, 10.5vw); font-weight: 700; letter-spacing: -.8px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.herocard .bar { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, .3); overflow: hidden; margin-top: 8px; }
+.herocard .bar span { display: block; height: 100%; width: 0; background: #fff; border-radius: 4px; transition: width .5s cubic-bezier(.2, .8, .2, 1); }
+.herocard .row { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; opacity: .95; font-variant-numeric: tabular-nums; }
+.herocard .trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.herocard .trio div { background: rgba(255, 255, 255, .18); border-radius: 12px; padding: 8px 10px; display: grid; gap: 2px; min-width: 0; }
+.herocard .trio small { opacity: .85; font-size: 12px; }
+.herocard .trio b { font-size: min(15px, 3.9vw); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.budget-link {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%;
+  margin-top: 10px; padding: 10px 0 0; border: 0; border-top: 1px solid rgba(255, 255, 255, .25);
+  background: none; color: #fff; font-size: 14px; cursor: pointer; text-align: left;
+}
+.budget-link b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* riquadro Categorie: barra unica + legenda che filtra */
+.stack { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; margin: 10px 0 12px; }
+.stack span { transition: opacity .2s; }
+.leg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
+.leg button {
+  display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 6px 6px 4px; margin: 0 -4px;
+  border: 0; border-radius: 10px; background: none; font-size: 14px; cursor: pointer; text-align: left;
+  transition: opacity .2s, background .2s;
+}
+.leg button .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.leg button b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.leg .cat-ico { width: 22px; height: 22px; border-radius: 6px; }
+.leg button.on { background: var(--fill); }
+.leg.filtering button:not(.on), .stack.filtering span:not(.on) { opacity: .35; }
+
+/* ricerca e filtro */
+.search-bar { display: flex; gap: 10px; align-items: center; margin-top: -4px; }
+.search-bar input {
+  flex: 1; min-width: 0; border: 0; border-radius: 10px; padding: 9px 12px;
+  background: var(--fill); outline: none; -webkit-appearance: none; appearance: none;
+}
+.filter-chip {
+  justify-self: start; display: inline-flex; align-items: center; gap: 8px; margin-top: -4px;
+  border: 0; border-radius: 999px; padding: 6px 12px 6px 6px; background: var(--card);
+  font-size: 14px; cursor: pointer;
+}
+.filter-chip .x { color: var(--secondary); font-size: 16px; line-height: 1; }
+
+/* movimenti raggruppati per giorno */
+.tx-days { display: grid; gap: 14px; }
+.day { display: grid; gap: 6px; }
+.day-head { display: flex; justify-content: space-between; align-items: baseline; padding: 0 16px; }
+.day-head .d { font-size: 15px; font-weight: 600; }
+.day-head .t { font-size: 13px; color: var(--secondary); font-variant-numeric: tabular-nums; }
+
+/* pannello budget */
+.budget-intro { text-align: center; font-size: 15px; color: var(--secondary); padding: 0 8px; }
+.budget-intro:empty { display: none; }
+.segmented.two { grid-template-columns: repeat(2, 1fr); }
+#budget-quick .chip { font-variant-numeric: tabular-nums; }
+#budget-quick .chip small { color: var(--secondary); font-weight: 400; }
+.leg { gap: 2px 6px; }
+.leg button { gap: 7px; padding: 6px 4px; font-size: 14px; }
+.leg button b { font-size: 13px; }

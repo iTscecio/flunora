@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611092214">
+  <link rel="stylesheet" href="css/style.css?v=202611092229">
 </head>
 <body>
 
@@ -95,30 +95,44 @@
         </div>
       </header>
 
-      <div class="kpis">
-        <div class="card kpi"><span class="secondary">Entrate</span><strong id="kpi-entrate">–</strong></div>
-        <div class="card kpi"><span class="secondary">Uscite</span><strong id="kpi-uscite">–</strong></div>
-        <div class="card kpi"><span class="secondary">Investimenti</span><strong id="kpi-invest">–</strong></div>
-        <div class="card kpi accent"><span class="secondary">Saldo del mese</span><strong id="kpi-saldo">–</strong></div>
+      <!-- carta "Ti restano" (0.2.2) -->
+      <div id="hero" class="herocard">
+        <span id="hero-label" class="lbl">Ti restano questo mese</span>
+        <span id="hero-amount" class="big">–</span>
+        <div id="hero-bar" class="bar"><span id="hero-fill"></span></div>
+        <div class="row"><span id="hero-pct"></span><span id="hero-days"></span></div>
+        <div class="trio">
+          <div><small>Entrate</small><b id="kpi-entrate">–</b></div>
+          <div><small>Uscite</small><b id="kpi-uscite">–</b></div>
+          <div><small>Investiti</small><b id="kpi-invest">–</b></div>
+        </div>
+        <button type="button" id="budget-link" class="budget-link">
+          <span id="budget-link-label">Imposta un budget</span><b id="budget-link-value">&rsaquo;</b>
+        </button>
       </div>
 
-      <div class="card">
-        <h2>Spese per categoria</h2>
-        <div id="donut-wrap" class="donut-wrap"></div>
-        <p class="secondary small">Investimenti esclusi dal grafico</p>
+      <!-- categorie: barra unica, tocco per filtrare -->
+      <div class="card" id="cat-card">
+        <div class="card-head"><h2>Categorie</h2><span id="cat-total" class="secondary small"></span></div>
+        <div id="cat-stack" class="stack"></div>
+        <div id="cat-legend" class="leg"></div>
+        <p id="cat-empty" class="secondary" hidden>Nessuna spesa registrata.</p>
       </div>
 
       <div class="section-title row-between">
         <h3>Movimenti</h3>
         <div class="head-actions">
-          <select id="filter-cat" aria-label="Filtra per categoria">
-            <option value="">Tutte</option>
-          </select>
+          <button type="button" id="btn-search" class="head-btn">Cerca</button>
           <button type="button" id="btn-select" class="head-btn">Seleziona</button>
         </div>
       </div>
+      <div id="search-bar" class="search-bar" hidden>
+        <input id="search-input" type="search" placeholder="Descrizione, categoria o importo" autocomplete="off" enterkeyhint="search">
+        <button type="button" id="search-close" class="link-btn">Annulla</button>
+      </div>
+      <button type="button" id="filter-chip" class="filter-chip" hidden></button>
       <p id="swipe-hint" class="secondary small hint" hidden>Scorri un movimento verso sinistra per eliminarlo.</p>
-      <ul id="tx-list" class="card list"></ul>
+      <div id="tx-list" class="tx-days"></div>
       <p id="tx-empty" class="secondary center" hidden>Nessun movimento in questo mese.<br>Tocca + per aggiungerne uno.</p>
     </main>
 
@@ -167,6 +181,8 @@
 
         <h3 class="section-title">Dati</h3>
         <ul class="card list settings">
+          <li class="tap" id="open-budget"><span class="ico" style="--c:#007aff"><svg viewBox="0 0 24 24"><path d="M4 7h16v12H4zM4 11h16M16 15h.01"/></svg></span>
+            <span class="label">Budget mensile</span><span id="set-budget" class="value"></span><span class="chev">&rsaquo;</span></li>
           <li class="tap" id="open-categories"><span class="ico" style="--c:#ff9500"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span>
             <span class="label">Categorie</span><span class="chev">&rsaquo;</span></li>
           <li class="soon" data-ver="0.3"><span class="ico" style="--c:#34c759"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span>
@@ -293,6 +309,34 @@
       </div>
     </form>
 
+    <!-- ---------- BUDGET (0.2.2) ---------- -->
+    <div id="budget-backdrop" class="sheet-backdrop top"></div>
+    <form id="budget-sheet" class="sheet top" aria-hidden="true" novalidate>
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <button type="button" id="budget-cancel" class="link-btn">Annulla</button>
+        <h2>Budget</h2>
+        <button type="submit" id="budget-save" class="link-btn strong">Salva</button>
+      </div>
+      <p id="budget-intro" class="budget-intro"></p>
+      <label class="amount">
+        <span>€</span>
+        <input id="budget-amount" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Budget mensile">
+      </label>
+      <div id="budget-quick" class="chips"></div>
+      <h3 class="section-title">Vale per</h3>
+      <div class="segmented two" id="budget-scope">
+        <button type="button" data-scope="all">Tutti i mesi</button>
+        <button type="button" data-scope="month" id="budget-scope-month">Solo questo mese</button>
+      </div>
+      <p id="budget-note" class="secondary small foot"></p>
+      <p id="budget-msg" class="msg" role="status"></p>
+      <div id="budget-actions" class="group actions">
+        <button type="button" id="budget-clear-month" class="action-row">Usa il budget fisso</button>
+        <button type="button" id="budget-remove" class="action-row danger">Rimuovi il budget fisso</button>
+      </div>
+    </form>
+
     <!-- ---------- MENU DI SCELTA (stile iOS) ---------- -->
     <div id="action-backdrop" class="sheet-backdrop topmost"></div>
     <div id="action-sheet" class="action-sheet" aria-hidden="true" role="dialog">
@@ -310,8 +354,8 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611092214"></script>
-  <script src="js/icons.js?v=202611092214"></script>
-  <script src="js/app.js?v=202611092214"></script>
+  <script src="js/config.js?v=202611092229"></script>
+  <script src="js/icons.js?v=202611092229"></script>
+  <script src="js/app.js?v=202611092229"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.2.1";
+const APP_VERSION = "0.2.2";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -25,6 +25,12 @@ const state = {
   selectedMonth: null,
   sections: [],                      // sezioni della barra: [{ id, on }] nell'ordine scelto
   settingsSynced: false,
+  settingsData: {},                  // impostazioni sincronizzate (sezioni, budget_cents, ...)
+  filterCat: null,                   // categoria scelta nel riquadro Categorie
+  search: "",                        // testo cercato tra i movimenti
+  budgetMonth: null,                 // budget solo per il mese mostrato (null = usa il fisso)
+  budgetTableMissing: false,
+  budgetEdit: null,                  // pannello budget aperto
 };
 
 // ---------- utilità ----------
@@ -50,6 +56,7 @@ function parseAmount(text) {
   let s = String(text).trim().replace(/\s|€/g, "");
   if (!s) return null;
   if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, ""); // "1.500" = millecinquecento
   const n = Number(s);
   if (!Number.isFinite(n) || n <= 0 || n > 10_000_000) return null;
   return Math.round(n * 100);
@@ -325,139 +332,248 @@ function renderYearChart(months) {
 // =========================================================
 $("month-prev").addEventListener("click", () => goToMonth(addMonths(state.month, -1)));
 $("month-next").addEventListener("click", () => goToMonth(addMonths(state.month, 1)));
-$("filter-cat").addEventListener("change", renderList);
+$("btn-search").addEventListener("click", () => {
+  $("search-bar").hidden = false;
+  $("search-input").focus();
+});
+$("search-close").addEventListener("click", () => { clearSearch(); renderList(); });
+$("search-input").addEventListener("input", () => { state.search = $("search-input").value.trim(); renderList(); });
+$("filter-chip").addEventListener("click", () => setFilter(null));
+$("budget-link").addEventListener("click", () => openBudgetSheet({ month: state.month }));
+
+function clearSearch() {
+  state.search = "";
+  $("search-input").value = "";
+  $("search-bar").hidden = true;
+}
 
 async function loadMonth() {
   const shown = state.month.getTime();
-  if (state.selectedMonth !== shown) { setSelecting(false); state.selectedMonth = shown; }
+  if (state.selectedMonth !== shown) {
+    setSelecting(false);
+    state.selectedMonth = shown;
+    state.filterCat = null;
+    clearSearch();
+  }
   $("month-label").textContent = `${MESI[state.month.getMonth()]} ${state.month.getFullYear()}`;
-  const { data, error } = await sb
-    .from("transactions")
-    .select("*")
-    .gte("date", isoDate(state.month))
-    .lt("date", isoDate(addMonths(state.month, 1)))
-    .order("date", { ascending: false })
-    .order("created_at", { ascending: false });
-  if (error) { toast("Errore movimenti: " + error.message); return; }
+  const [txRes, bRes] = await Promise.all([
+    sb.from("transactions").select("*")
+      .gte("date", isoDate(state.month)).lt("date", isoDate(addMonths(state.month, 1)))
+      .order("date", { ascending: false }).order("created_at", { ascending: false }),
+    sb.from("budgets").select("amount_cents").eq("month", isoDate(state.month)).maybeSingle(),
+  ]);
+  if (txRes.error) { toast("Errore movimenti: " + txRes.error.message); return; }
   if (shown !== state.month.getTime()) return; // mese cambiato nel frattempo
-  state.transactions = data;
+  state.transactions = txRes.data;
+  state.budgetMonth = bRes.error ? null : (bRes.data?.amount_cents ?? null);
+  state.budgetTableMissing = !!bRes.error;
   renderKpis();
   renderDonut();
   renderList();
 }
 
-function renderKpis() {
+function monthTotals(list = state.transactions) {
   const t = { entrata: 0, uscita: 0, investimento: 0 };
-  for (const tx of state.transactions) t[tx.kind] += tx.amount_cents;
-  const saldo = t.entrata - t.uscita - t.investimento;
+  for (const tx of list) t[tx.kind] += tx.amount_cents;
+  return t;
+}
+
+// budget del mese mostrato: quello solo per il mese, altrimenti il fisso
+const defaultBudget = () => state.settingsData?.budget_cents || null;
+const currentBudget = () => state.budgetMonth ?? defaultBudget();
+
+// stato del mese rispetto a oggi: -1 passato, 0 corrente, 1 futuro
+function monthStatus(d) {
+  const now = firstOfMonth(new Date()).getTime(), t = d.getTime();
+  return t < now ? -1 : t > now ? 1 : 0;
+}
+
+// carta "Ti restano"
+function renderKpis() {
+  const t = monthTotals();
+  const budget = currentBudget();
+  const status = monthStatus(state.month);
+  const mese = MESI[state.month.getMonth()];
+
   $("kpi-entrate").textContent = fmt(t.entrata);
   $("kpi-uscite").textContent = fmt(t.uscita);
   $("kpi-invest").textContent = fmt(t.investimento);
-  $("kpi-saldo").textContent = signed(saldo);
-  $("kpi-saldo").classList.toggle("neg", saldo < 0);
+
+  let base, pctText, rest;
+  if (budget) {
+    rest = budget - t.uscita;                       // gli investimenti non sono spese
+    base = budget;
+    pctText = `Speso il ${Math.round((t.uscita / budget) * 100)}% del budget`;
+  } else if (t.entrata) {
+    rest = t.entrata - t.uscita - t.investimento;   // soldi davvero ancora disponibili
+    base = t.entrata;
+    pctText = `Speso il ${Math.round((t.uscita / t.entrata) * 100)}% delle entrate`;
+  } else {
+    rest = null;
+  }
+
+  const over = rest !== null && rest < 0;
+  let label;
+  if (rest === null) label = "Spese del mese";
+  else if (over) label = budget ? "Oltre il budget di" : "Hai speso più delle entrate di";
+  else label = status < 0 ? `Ti sono rimasti a ${mese}` : status > 0 ? `Disponibili a ${mese}` : "Ti restano questo mese";
+
+  $("hero").classList.toggle("over", over);
+  $("hero-label").textContent = label;
+  $("hero-amount").textContent = rest === null ? fmt(t.uscita) : fmt(Math.abs(rest));
+  $("hero-bar").hidden = rest === null;
+  $("hero-fill").style.width = rest === null ? "0" : Math.min(100, Math.round((t.uscita / base) * 100)) + "%";
+  $("hero-pct").textContent = rest === null ? "Imposta un budget per sapere quanto ti resta" : pctText;
+
+  if (status === 0) {
+    const today = new Date();
+    const left = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate() - today.getDate();
+    $("hero-days").textContent = left === 0 ? "Ultimo giorno del mese" : left === 1 ? "1 giorno alla fine" : `${left} giorni alla fine`;
+  } else {
+    $("hero-days").textContent = status < 0 ? "Mese concluso" : "Mese futuro";
+  }
+
+  if (budget) {
+    $("budget-link-label").textContent = state.budgetMonth ? `Budget solo per ${mese}` : `Budget di ${mese}`;
+    $("budget-link-value").textContent = fmt(budget) + " ›";
+  } else {
+    $("budget-link-label").textContent = "Imposta un budget";
+    $("budget-link-value").textContent = "›";
+  }
 }
 
+// riquadro Categorie: barra unica divisa per categoria, tocco per filtrare
 function renderDonut() {
-  const wrap = $("donut-wrap");
-  wrap.replaceChildren();
   const byCat = new Map();
   for (const tx of state.transactions) {
     if (tx.kind === "uscita") byCat.set(tx.category_id, (byCat.get(tx.category_id) || 0) + tx.amount_cents);
   }
   const total = [...byCat.values()].reduce((a, b) => a + b, 0);
-  if (!total) { wrap.append(el("p", "secondary", "Nessuna spesa registrata.")); return; }
+  const items = [...byCat].map(([id, cents]) => ({ id, cat: catById(id), cents })).sort((a, b) => b.cents - a.cents);
+  if (state.filterCat && !byCat.has(state.filterCat) && catById(state.filterCat)?.kind === "uscita") state.filterCat = null;
 
-  const items = [...byCat].map(([id, cents]) => ({ cat: catById(id), cents })).sort((a, b) => b.cents - a.cents);
-  const NS = "http://www.w3.org/2000/svg";
-  const size = 128, r = 48, C = 2 * Math.PI * r;
-  const svg = document.createElementNS(NS, "svg");
-  svg.setAttribute("width", size); svg.setAttribute("height", size);
-  svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
-  svg.setAttribute("role", "img"); svg.setAttribute("aria-label", "Spese per categoria");
-  let off = 0;
-  for (const it of items) {
-    const len = (it.cents / total) * C;
-    const c = document.createElementNS(NS, "circle");
-    c.setAttribute("cx", size / 2); c.setAttribute("cy", size / 2); c.setAttribute("r", r);
-    c.setAttribute("fill", "none"); c.setAttribute("stroke", it.cat?.color || "#8e8e93");
-    c.setAttribute("stroke-width", 18);
-    c.setAttribute("stroke-dasharray", `${Math.max(0, len - 1.5)} ${C - Math.max(0, len - 1.5)}`);
-    c.setAttribute("stroke-dashoffset", -off);
-    c.setAttribute("transform", `rotate(-90 ${size / 2} ${size / 2})`);
-    svg.append(c);
-    off += len;
-  }
-  const txt = document.createElementNS(NS, "text");
-  txt.setAttribute("x", size / 2); txt.setAttribute("y", size / 2 + 4);
-  txt.setAttribute("text-anchor", "middle"); txt.setAttribute("class", "total");
-  txt.textContent = fmt(total);
-  svg.append(txt);
+  $("cat-total").textContent = total ? fmt(total) : "";
+  $("cat-empty").hidden = total > 0;
+  const stack = $("cat-stack"), leg = $("cat-legend");
+  stack.hidden = leg.hidden = total === 0;
+  stack.classList.toggle("filtering", !!state.filterCat);
+  leg.classList.toggle("filtering", !!state.filterCat);
 
-  const ul = el("ul", "legend");
-  for (const it of items) {
-    const li = el("li");
-    li.append(catIcon(it.cat, "sm"), el("span", "name", it.cat?.name || "?"), el("span", "val", fmt(it.cents)),
-      el("span", "pct", Math.round((it.cents / total) * 100) + "%"));
-    ul.append(li);
-  }
-  wrap.append(svg, ul);
+  stack.replaceChildren(...items.map((it) => {
+    const s = el("span", it.id === state.filterCat ? "on" : "");
+    s.style.flex = String(it.cents);
+    s.style.background = it.cat?.color || "#8e8e93";
+    return s;
+  }));
+  leg.replaceChildren(...items.map((it) => {
+    const b = el("button", it.id === state.filterCat ? "on" : "");
+    b.type = "button";
+    b.setAttribute("aria-pressed", it.id === state.filterCat ? "true" : "false");
+    b.title = fmt(it.cents);
+    b.append(catIcon(it.cat, "sm"), el("span", "name", it.cat?.name || "?"),
+      el("b", null, Math.max(1, Math.round((it.cents / total) * 100)) + "%"));
+    b.addEventListener("click", () => setFilter(state.filterCat === it.id ? null : it.id));
+    return b;
+  }));
 }
 
-function fillFilterSelect() {
-  const sel = $("filter-cat");
-  sel.replaceChildren(new Option("Tutte", ""));
-  for (const [kind, label] of [["uscita", "Uscite"], ["entrata", "Entrate"], ["investimento", "Investimenti"]]) {
-    const og = document.createElement("optgroup");
-    og.label = label;
-    for (const c of state.categories.filter((c) => c.kind === kind)) og.append(new Option(c.name, c.id));
-    sel.append(og);
-  }
+function setFilter(id) {
+  state.filterCat = id;
+  closeOpenRow();
+  renderDonut();
+  renderList();
 }
+
+// non serve più (filtro dal riquadro Categorie); resta per compatibilità
+function fillFilterSelect() {}
 
 function visibleRows() {
-  const f = $("filter-cat").value;
-  return state.transactions.filter((t) => !f || t.category_id === f);
+  const q = (state.search || "").toLowerCase();
+  return state.transactions.filter((t) => {
+    if (state.filterCat && t.category_id !== state.filterCat) return false;
+    if (!q) return true;
+    const cat = catById(t.category_id);
+    return [t.description, cat?.name, fmt(t.amount_cents), (t.amount_cents / 100).toFixed(2).replace(".", ",")]
+      .some((v) => v && String(v).toLowerCase().includes(q));
+  });
+}
+
+function dayLabel(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d), today = new Date();
+  const same = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  const yest = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  const short = dt.toLocaleDateString("it-IT", { day: "numeric", month: "long" });
+  if (same(dt, today)) return `Oggi · ${short}`;
+  if (same(dt, yest)) return `Ieri · ${short}`;
+  return dt.toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" });
 }
 
 function renderList() {
-  const ul = $("tx-list");
-  ul.replaceChildren();
+  const box = $("tx-list");
+  box.replaceChildren();
   openRow = null;
   const rows = visibleRows();
-  ul.hidden = rows.length === 0;
+  box.hidden = rows.length === 0;
+  const filtered = !!(state.filterCat || state.search);
   $("tx-empty").hidden = rows.length > 0;
+  $("tx-empty").innerHTML = filtered
+    ? "Nessun movimento trovato."
+    : "Nessun movimento in questo mese.<br>Tocca + per aggiungerne uno.";
   $("btn-select").hidden = rows.length === 0 && !state.selecting;
   $("swipe-hint").hidden = rows.length === 0 || state.selecting || hintSeen();
 
+  // pulsante "filtro attivo"
+  const chip = $("filter-chip");
+  const fc = state.filterCat && catById(state.filterCat);
+  chip.hidden = !fc;
+  if (fc) chip.replaceChildren(catIcon(fc, "sm"), document.createTextNode(fc.name), el("span", "x", "✕"));
+
+  // gruppi per giorno (le righe arrivano già dalla più recente)
+  const groups = [];
   for (const tx of rows) {
-    const cat = catById(tx.category_id);
-    const li = el("li", "swipe" + (state.selected.has(tx.id) ? " selected" : ""));
-    li.dataset.id = tx.id;
+    if (!groups.length || groups.at(-1).date !== tx.date) groups.push({ date: tx.date, items: [] });
+    groups.at(-1).items.push(tx);
+  }
 
-    // pulsante rosso, scoperto dallo scorrimento
-    const del = el("button", "swipe-delete");
-    del.type = "button";
-    del.setAttribute("aria-label", "Elimina movimento");
-    del.append(el("span", null, "Elimina"));
-    del.addEventListener("click", (e) => { e.stopPropagation(); deleteTransactions([tx]); });
+  for (const g of groups) {
+    const spese = g.items.filter((t) => t.kind === "uscita").reduce((a, t) => a + t.amount_cents, 0);
+    const day = el("section", "day");
+    const head = el("div", "day-head");
+    head.append(el("span", "d", dayLabel(g.date)), el("span", "t", spese ? "− " + fmt(spese) : ""));
+    const ul = el("ul", "card list");
 
-    const content = el("div", "row-content");
-    const check = el("span", "check");
-    check.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
-    const grow = el("div", "grow");
-    const sub = el("div", "sub");
-    const [y, m, d] = tx.date.split("-").map(Number);
-    const giorno = new Date(y, m - 1, d).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
-    const tipo = { entrata: "Entrata", uscita: "", investimento: "Investimento" }[tx.kind];
-    sub.append(document.createTextNode([giorno, tipo, cat?.name].filter(Boolean).join(" · ")));
-    grow.append(el("div", "title", tx.description || cat?.name || "Movimento"), sub);
-    const amt = el("span", "amt" + (tx.kind === "entrata" ? " in" : ""),
-      (tx.kind === "entrata" ? "+ " : "− ") + fmt(tx.amount_cents));
-    content.append(check, catIcon(cat), grow, amt);
+    for (const tx of g.items) {
+      const cat = catById(tx.category_id);
+      const li = el("li", "swipe" + (state.selected.has(tx.id) ? " selected" : ""));
+      li.dataset.id = tx.id;
 
-    li.append(del, content);
-    attachSwipe(li, content, tx);
-    ul.append(li);
+      // pulsante rosso, scoperto dallo scorrimento
+      const del = el("button", "swipe-delete");
+      del.type = "button";
+      del.setAttribute("aria-label", "Elimina movimento");
+      del.append(el("span", null, "Elimina"));
+      del.addEventListener("click", (e) => { e.stopPropagation(); deleteTransactions([tx]); });
+
+      const content = el("div", "row-content");
+      const check = el("span", "check");
+      check.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+      const grow = el("div", "grow");
+      const tipo = { entrata: "Entrata", uscita: "", investimento: "Investimento" }[tx.kind];
+      grow.append(
+        el("div", "title", tx.description || cat?.name || "Movimento"),
+        el("div", "sub", [tipo, cat?.name].filter(Boolean).join(" · "))
+      );
+      const amt = el("span", "amt" + (tx.kind === "entrata" ? " in" : ""),
+        (tx.kind === "entrata" ? "+ " : "− ") + fmt(tx.amount_cents));
+      content.append(check, catIcon(cat), grow, amt);
+
+      li.append(del, content);
+      attachSwipe(li, content, tx);
+      ul.append(li);
+    }
+    day.append(head, ul);
+    box.append(day);
   }
 }
 
@@ -712,6 +828,10 @@ $("sheet").addEventListener("submit", async (e) => {
   closeSheet();
   toast(wasEdit ? "Movimento aggiornato" : "Movimento salvato");
   refreshAfterChange(row.date);
+  // 0.2.2: dopo lo stipendio, se quel mese non ha un budget, lo chiede
+  if (!wasEdit && row.kind === "entrata" && /stipendio/i.test(catById(row.category_id)?.name || "")) {
+    askBudgetAfterSalary(row);
+  }
 });
 
 $("sheet-delete").addEventListener("click", async () => {
@@ -771,11 +891,15 @@ function normalizeSections(list) {
 
 const firstSection = () => state.sections.find((s) => s.on)?.id || "dashboard";
 
+const LS_SETTINGS = "flunora.settings";
+
 async function loadSettings() {
   // prima la copia sul dispositivo (avvio veloce), poi quella su Supabase
-  let local = null;
+  let local = null, localData = null;
   try { local = JSON.parse(lsGet(LS_SECTIONS)); } catch {}
+  try { localData = JSON.parse(lsGet(LS_SETTINGS)); } catch {}
   state.sections = normalizeSections(local || DEFAULT_SECTIONS);
+  state.settingsData = localData && typeof localData === "object" ? localData : {};
   const { data, error } = await sb.from("user_settings").select("data").maybeSingle();
   if (error) {
     state.settingsSynced = false;
@@ -785,25 +909,36 @@ async function loadSettings() {
     return;
   }
   state.settingsSynced = true;
+  if (data?.data) {
+    state.settingsData = { ...data.data };
+    lsSet(LS_SETTINGS, JSON.stringify(state.settingsData));
+  }
   if (data?.data?.sections) {
     state.sections = normalizeSections(data.data.sections);
     lsSet(LS_SECTIONS, JSON.stringify(state.sections));
   }
 }
 
+// Salva tutte le impostazioni sincronizzate (sezioni, budget fisso, ...) in un colpo solo
 let saveTimer;
-function saveSections() {
+function saveSettingsData(message = "Impostazioni salvate solo su questo dispositivo") {
+  state.settingsData = { ...state.settingsData, sections: state.sections };
+  lsSet(LS_SETTINGS, JSON.stringify(state.settingsData));
   lsSet(LS_SECTIONS, JSON.stringify(state.sections));
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
-    const { error } = await sb.from("user_settings").upsert({
-      user_id: state.user.id,
-      data: { sections: state.sections },
-      updated_at: new Date().toISOString(),
-    });
-    if (error) toast("Sezioni salvate solo su questo dispositivo");
-  }, 400);
+  return new Promise((resolve) => {
+    saveTimer = setTimeout(async () => {
+      const { error } = await sb.from("user_settings").upsert({
+        user_id: state.user.id,
+        data: state.settingsData,
+        updated_at: new Date().toISOString(),
+      });
+      if (error) toast(message);
+      resolve(!error);
+    }, 300);
+  });
 }
+const saveSections = () => saveSettingsData("Sezioni salvate solo su questo dispositivo");
 
 function renderTabbar() {
   const pill = $("tab-pill");
@@ -854,6 +989,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("setti
 function openSettings() {
   setSelecting(false);
   renderSectionsList();
+  $("set-budget").textContent = defaultBudget() ? fmt(defaultBudget()) : "Non impostato";
   $("settings").scrollTop = 0;
   $("settings").classList.add("open");
   $("settings").setAttribute("aria-hidden", "false");
@@ -1303,5 +1439,156 @@ async function deleteCategory(c, target) {
   if (state.page === "mesi") loadMonth();
   toast(target ? `Eliminata · movimenti spostati in ${target.name}` : "Categoria eliminata");
 }
+
+// =========================================================
+//  BUDGET (0.2.2)
+//  Budget fisso nelle impostazioni sincronizzate; budget del singolo mese nella tabella "budgets".
+// =========================================================
+$("open-budget").addEventListener("click", () => openBudgetSheet({ month: firstOfMonth(new Date()), scope: "all" }));
+$("budget-cancel").addEventListener("click", closeBudgetSheet);
+$("budget-backdrop").addEventListener("click", closeBudgetSheet);
+$("budget-scope").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-scope]");
+  if (b && state.budgetEdit) { state.budgetEdit.scope = b.dataset.scope; renderBudgetSheet(); }
+});
+
+const roundTo10 = (cents) => Math.max(1000, Math.round(cents / 1000) * 1000);
+const meseNome = (d) => MESI[d.getMonth()];
+
+// budget scelto solo per un mese (null se non c'è o se la tabella manca)
+async function monthBudget(month) {
+  const { data, error } = await sb.from("budgets").select("amount_cents").eq("month", isoDate(month)).maybeSingle();
+  return error ? null : (data?.amount_cents ?? null);
+}
+
+async function askBudgetAfterSalary(row) {
+  const [y, m] = row.date.split("-").map(Number);
+  const month = new Date(y, m - 1, 1);
+  if (defaultBudget() || await monthBudget(month)) return;   // c'è già un budget per quel mese
+  openBudgetSheet({
+    month, scope: "all", salary: row.amount_cents,
+    intro: `Hai registrato lo stipendio. Quanto vuoi spendere a ${meseNome(month)}?`,
+  });
+}
+
+async function openBudgetSheet({ month, scope, salary = null, intro = "" }) {
+  const override = month.getTime() === state.month.getTime() ? state.budgetMonth : await monthBudget(month);
+  const prev = addMonths(month, -1);
+  const prevBudget = (await monthBudget(prev)) ?? defaultBudget();
+  state.budgetEdit = { month, override, salary, prevBudget, scope: scope || (override ? "month" : "all") };
+
+  const current = override ?? defaultBudget();
+  $("budget-amount").value = current ? (current / 100).toFixed(2).replace(".", ",") : "";
+  $("budget-intro").textContent = intro;
+  $("budget-scope-month").textContent = `Solo ${meseNome(month)}`;
+  setMsg($("budget-msg"), "");
+  renderBudgetSheet();
+  $("budget-sheet").scrollTop = 0;
+  $("budget-sheet").classList.add("open");
+  $("budget-sheet").setAttribute("aria-hidden", "false");
+  $("budget-backdrop").classList.add("open");
+}
+
+function closeBudgetSheet() {
+  $("budget-sheet").classList.remove("open");
+  $("budget-sheet").setAttribute("aria-hidden", "true");
+  $("budget-backdrop").classList.remove("open");
+  if ($("budget-sheet").contains(document.activeElement)) document.activeElement.blur();
+  state.budgetEdit = null;
+}
+
+function renderBudgetSheet() {
+  const e = state.budgetEdit;
+  const mese = meseNome(e.month);
+  document.querySelectorAll("#budget-scope button").forEach((b) => b.classList.toggle("on", b.dataset.scope === e.scope));
+  $("budget-note").textContent = e.scope === "all"
+    ? "Vale per ogni mese, tranne quelli con un budget scelto apposta."
+    : `Solo per ${mese} ${e.month.getFullYear()}; gli altri mesi usano il budget fisso.`;
+
+  // proposte rapide (senza doppioni)
+  const proposals = [];
+  const add = (label, cents) => { if (cents && !proposals.some((p) => p.cents === cents)) proposals.push({ label, cents }); };
+  if (e.salary) add("70% dello stipendio", roundTo10(e.salary * 0.7));
+  if (e.prevBudget) add("Come il mese prima", e.prevBudget);
+  if (defaultBudget() && e.scope === "month") add("Budget fisso", defaultBudget());
+  if (!e.salary && month0Income(e.month)) add("70% delle entrate", roundTo10(month0Income(e.month) * 0.7));
+  const box = $("budget-quick");
+  box.replaceChildren(...proposals.map((p) => {
+    const b = el("button", "chip");
+    b.type = "button";
+    b.append(document.createTextNode(fmt(p.cents) + " "), el("small", null, p.label));
+    b.addEventListener("click", () => { $("budget-amount").value = (p.cents / 100).toFixed(2).replace(".", ","); });
+    return b;
+  }));
+  box.hidden = proposals.length === 0;
+
+  $("budget-clear-month").hidden = !e.override;
+  $("budget-clear-month").textContent = defaultBudget() ? `Usa il budget fisso per ${mese}` : `Rimuovi il budget di ${mese}`;
+  $("budget-remove").hidden = !defaultBudget();
+  $("budget-actions").hidden = $("budget-clear-month").hidden && $("budget-remove").hidden;
+}
+
+// entrate del mese, se è quello mostrato in pagina
+function month0Income(month) {
+  return month.getTime() === state.month.getTime() ? monthTotals().entrata : 0;
+}
+
+async function afterBudgetChange(text) {
+  closeBudgetSheet();
+  toast(text);
+  if (state.page === "mesi") await loadMonth();
+  $("set-budget").textContent = defaultBudget() ? fmt(defaultBudget()) : "Non impostato";
+}
+
+$("budget-sheet").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const e = state.budgetEdit;
+  if (!e) return;
+  const msg = $("budget-msg");
+  const amount = parseAmount($("budget-amount").value);
+  if (amount === null) { setMsg(msg, "Inserisci un importo valido, es. 1.500.", true); $("budget-amount").focus(); return; }
+  const btn = $("budget-save");
+  btn.disabled = true;
+
+  if (e.scope === "all") {
+    state.settingsData.budget_cents = amount;
+    const ok = await saveSettingsData("Budget salvato solo su questo dispositivo");
+    // il mese da cui lo imposti segue il nuovo budget fisso
+    if (e.override) await sb.from("budgets").delete().eq("month", isoDate(e.month));
+    btn.disabled = false;
+    await afterBudgetChange(ok ? "Budget fisso salvato" : "Budget salvato su questo dispositivo");
+  } else {
+    const { error } = await sb.from("budgets").upsert(
+      { user_id: state.user.id, month: isoDate(e.month), amount_cents: amount, updated_at: new Date().toISOString() },
+      { onConflict: "user_id,month" });
+    btn.disabled = false;
+    if (error) {
+      setMsg(msg, /budgets|schema cache|PGRST20|42P01/i.test(`${error.message} ${error.code}`)
+        ? "Esegui prima lo script 0.2.2 in Supabase." : "Errore: " + traduciErrore(error.message), true);
+      return;
+    }
+    await afterBudgetChange(`Budget di ${meseNome(e.month)} salvato`);
+  }
+});
+
+$("budget-clear-month").addEventListener("click", async () => {
+  const e = state.budgetEdit;
+  if (!e) return;
+  const { error } = await sb.from("budgets").delete().eq("month", isoDate(e.month));
+  if (error) return setMsg($("budget-msg"), "Errore: " + traduciErrore(error.message), true);
+  await afterBudgetChange(defaultBudget() ? `${meseNome(e.month)} usa il budget fisso` : "Budget rimosso");
+});
+
+$("budget-remove").addEventListener("click", () => {
+  actionSheet({
+    title: "Rimuovere il budget fisso?",
+    message: "I mesi senza un budget proprio mostreranno quanto resta delle entrate.",
+    actions: [{ label: "Rimuovi budget fisso", danger: true, onClick: async () => {
+      delete state.settingsData.budget_cents;
+      await saveSettingsData();
+      await afterBudgetChange("Budget fisso rimosso");
+    } }],
+  });
+});
 
 init();

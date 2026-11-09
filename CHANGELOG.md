@@ -1,5 +1,19 @@
 # Changelog — Flunora
 
+## 0.2.2
+- Nuova pagina Mesi in stile "Carte"
+  - carta "Ti restano questo mese": budget − uscite, oppure (senza budget) entrate − uscite − investiti; barra di quanto speso, giorni alla fine del mese; diventa arancione se si va oltre
+  - riquadro "Categorie": barra unica divisa per categoria con percentuali; tocco su una categoria per filtrare i movimenti
+  - movimenti raggruppati per giorno (Oggi, Ieri, data) con il totale delle sole spese
+  - pulsante Cerca: per descrizione, categoria o importo
+- Budget mensile
+  - budget fisso valido per tutti i mesi, sincronizzato tra PC e iPhone
+  - budget diverso per un singolo mese, con ritorno al budget fisso
+  - dopo aver salvato lo Stipendio, se il mese non ha un budget l'app lo chiede, con proposte rapide
+  - voce "Budget mensile" in Impostazioni › Dati
+  - script `supabase/migrations/0.2.2_budget.sql`
+- Importi: "1.500" ora vale millecinquecento euro (prima veniva letto come 1,50 €)
+
 ## 0.2.1
 - Il pannello + (nuovo movimento) e l'editor di una nuova categoria non aprono più la tastiera da soli: si apre solo toccando un campo
 - Se premi "Salva" con un campo vuoto o non valido, l'app porta comunque il cursore lì per correggerlo
