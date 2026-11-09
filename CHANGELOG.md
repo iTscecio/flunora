@@ -1,5 +1,10 @@
 # Changelog — Flunora
 
+## 0.2.4
+- Saldo totale in cima alla Dashboard: saldo iniziale + entrate − uscite − investiti dei movimenti dal giorno dopo la data scelta fino a oggi (i movimenti futuri non contano)
+- Saldo iniziale (importo anche zero o negativo + data) dalla carta del saldo o da Impostazioni › Dati; salvato nelle impostazioni sincronizzate, nessuno script Supabase
+- Calcolo efficiente: totali mensili per i mesi interi, movimenti solo per il primo e l'ultimo mese
+
 ## 0.2.3
 - Pagina "Novità" in Impostazioni › Informazioni con le note di rilascio di tutte le versioni (`js/releases.js`)
 - Al primo avvio e dopo ogni aggiornamento compare da solo un pannello con le novità non ancora viste (anche più versioni insieme)

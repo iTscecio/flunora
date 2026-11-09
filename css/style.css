@@ -681,3 +681,22 @@ input, select { font: inherit; font-size: 17px; color: var(--text); }
 .whatsnew .btn-primary { margin-top: auto; }
 .release-items li.ver-sep { padding-left: 0; font-weight: 700; font-size: 15px; color: var(--secondary); }
 .release-items li.ver-sep::before { display: none; }
+
+/* =========================================================
+   0.2.4 — SALDO TOTALE
+   ========================================================= */
+button.card.saldo {
+  border: 0; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer;
+  display: grid; gap: 4px; padding: 18px;
+}
+button.card.saldo:active { transform: scale(.99); }
+.saldo .lbl { font-size: 15px; color: var(--secondary); }
+.saldo .big { font-size: min(40px, 10.5vw); font-weight: 700; letter-spacing: -.8px; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.saldo .big.neg { color: var(--bad); }
+.saldo .when { font-size: 14px; color: var(--secondary); }
+.saldo.empty { justify-items: center; text-align: center; gap: 8px; padding: 20px; }
+.saldo.empty .ic { width: 48px; height: 48px; border-radius: 12px; background: #34c759; display: grid; place-items: center; }
+.saldo.empty .ic svg { width: 28px; height: 28px; fill: none; stroke: #fff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.saldo.empty h2 { font-size: 18px; }
+.saldo.empty .cta { margin-top: 6px; width: 100%; border-radius: 14px; padding: 14px; background: var(--accent); color: #fff; font-weight: 600; }
+button.card.saldo.empty { text-align: center; justify-items: center; }

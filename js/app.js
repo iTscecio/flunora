@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.2.3";
+const APP_VERSION = "0.2.4";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -215,6 +215,7 @@ $("year-prev").addEventListener("click", () => { state.year--; loadDashboard(); 
 $("year-next").addEventListener("click", () => { state.year++; loadDashboard(); });
 
 async function loadDashboard() {
+  loadBalance();   // saldo totale (0.2.4), indipendente dall'anno mostrato
   const y = state.year;
   $("year-label").textContent = y;
   document.querySelectorAll("#page-dashboard .y").forEach((s) => (s.textContent = y));
@@ -991,6 +992,7 @@ function openSettings() {
   setSelecting(false);
   renderSectionsList();
   $("set-budget").textContent = defaultBudget() ? fmt(defaultBudget()) : "Non impostato";
+  $("set-opening").textContent = openingLabel();
   $("settings").scrollTop = 0;
   $("settings").classList.add("open");
   $("settings").setAttribute("aria-hidden", "false");
@@ -1660,5 +1662,146 @@ function closeWhatsNew() {
 $("whatsnew-ok").addEventListener("click", closeWhatsNew);
 $("whatsnew-backdrop").addEventListener("click", closeWhatsNew);
 $("whatsnew-all").addEventListener("click", () => { closeWhatsNew(); openReleases(true); });
+
+// =========================================================
+//  SALDO TOTALE (0.2.4)
+//  saldo iniziale (a fine giornata della data scelta)
+//  + entrate − uscite − investiti dei movimenti dal giorno dopo fino a oggi.
+//  Il saldo iniziale sta nelle impostazioni sincronizzate: { cents, date }.
+// =========================================================
+const opening = () => {
+  const o = state.settingsData?.opening;
+  return o && Number.isFinite(o.cents) && /^\d{4}-\d{2}-\d{2}$/.test(o.date || "") ? o : null;
+};
+
+// come parseAmount ma accetta anche 0 e importi negativi ("-120", "−120")
+function parseSigned(text) {
+  const t = String(text).trim();
+  const neg = /^[-−]/.test(t);
+  const body = t.replace(/^[-−]\s*/, "");
+  if (/^0+([.,]0*)?$/.test(body.replace(/\s|€/g, ""))) return 0;
+  const v = parseAmount(body);
+  return v === null ? null : neg ? -v : v;
+}
+
+const addDays = (iso, n) => { const [y, m, d] = iso.split("-").map(Number); return isoDate(new Date(y, m - 1, d + n)); };
+const delta = (e, u, i) => Number(e) - Number(u) - Number(i);
+
+// somma (entrate − uscite − investiti) dei movimenti tra due date incluse
+async function sumBetween(from, to) {
+  if (from > to) return 0;
+  const { data, error } = await sb.from("transactions").select("kind, amount_cents").gte("date", from).lte("date", to);
+  if (error) throw error;
+  return data.reduce((a, t) => a + (t.kind === "entrata" ? t.amount_cents : -t.amount_cents), 0);
+}
+
+async function computeBalance(o) {
+  const today = isoDate(new Date());
+  const from = addDays(o.date, 1);
+  if (from > today) return o.cents;
+  const fromMonth = from.slice(0, 7) + "-01", todayMonth = today.slice(0, 7) + "-01";
+  if (fromMonth === todayMonth) return o.cents + await sumBetween(from, today);
+  // mese di partenza e mese corrente dai movimenti; i mesi interi in mezzo dai totali mensili
+  const endFirst = isoDate(new Date(Number(from.slice(0, 4)), Number(from.slice(5, 7)), 0));
+  const [first, current, mid] = await Promise.all([
+    sumBetween(from, endFirst),
+    sumBetween(todayMonth, today),
+    sb.from("monthly_totals").select("month, entrate_cents, uscite_cents, investimenti_cents")
+      .gt("month", fromMonth).lt("month", todayMonth),
+  ]);
+  if (mid.error) throw mid.error;
+  const middle = mid.data.reduce((a, r) => a + delta(r.entrate_cents, r.uscite_cents, r.investimenti_cents), 0);
+  return o.cents + first + middle + current;
+}
+
+async function loadBalance() {
+  const card = $("saldo-card");
+  const o = opening();
+  card.classList.toggle("empty", !o);
+  if (!o) {
+    card.innerHTML = `<span class="ic"><svg viewBox="0 0 24 24"><path d="M2 6h20v12H2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg></span>
+      <h2>Quanto hai in tutto?</h2>
+      <span class="secondary">Indica quanto avevi in una certa data: da lì Flunora calcola il tuo saldo totale con i movimenti.</span>
+      <span class="cta">Imposta il saldo iniziale</span>`;
+    card.setAttribute("aria-label", "Imposta il saldo iniziale");
+    return;
+  }
+  if (!card.querySelector(".big")) {
+    card.replaceChildren(el("span", "lbl", "Saldo totale"), el("span", "big", "–"), el("span", "when", ""));
+  }
+  try {
+    const cents = await computeBalance(o);
+    if (!opening()) return;
+    const big = card.querySelector(".big");
+    big.textContent = (cents < 0 ? "− " : "") + fmt(Math.abs(cents));
+    big.classList.toggle("neg", cents < 0);
+    const oggi = new Date().toLocaleDateString("it-IT", { day: "numeric", month: "long" });
+    card.querySelector(".when").textContent = cents < 0 ? `In negativo oggi, ${oggi}` : `Disponibili oggi, ${oggi}`;
+    card.setAttribute("aria-label", `Saldo totale ${big.textContent}. Tocca per cambiare il saldo iniziale`);
+  } catch (err) {
+    card.querySelector(".big").textContent = "–";
+    card.querySelector(".when").textContent = "Saldo non disponibile: " + traduciErrore(err.message || "");
+  }
+}
+
+function openingLabel() {
+  const o = opening();
+  if (!o) return "Non impostato";
+  const [y, m, d] = o.date.split("-").map(Number);
+  return `${(o.cents < 0 ? "− " : "") + fmt(Math.abs(o.cents))} · ${new Date(y, m - 1, d).toLocaleDateString("it-IT", { day: "numeric", month: "short" })}`;
+}
+
+$("saldo-card").addEventListener("click", openOpeningSheet);
+$("open-opening").addEventListener("click", openOpeningSheet);
+$("opening-cancel").addEventListener("click", closeOpeningSheet);
+$("opening-backdrop").addEventListener("click", closeOpeningSheet);
+
+function openOpeningSheet() {
+  const o = opening();
+  $("opening-amount").value = o ? (o.cents < 0 ? "−" : "") + (Math.abs(o.cents) / 100).toFixed(2).replace(".", ",") : "";
+  $("opening-date").value = o?.date || isoDate(new Date());
+  $("opening-actions").hidden = !o;
+  setMsg($("opening-msg"), "");
+  $("opening-sheet").scrollTop = 0;
+  $("opening-sheet").classList.add("open");
+  $("opening-sheet").setAttribute("aria-hidden", "false");
+  $("opening-backdrop").classList.add("open");
+}
+function closeOpeningSheet() {
+  $("opening-sheet").classList.remove("open");
+  $("opening-sheet").setAttribute("aria-hidden", "true");
+  $("opening-backdrop").classList.remove("open");
+  if ($("opening-sheet").contains(document.activeElement)) document.activeElement.blur();
+}
+
+async function afterOpeningChange(text) {
+  closeOpeningSheet();
+  toast(text);
+  $("set-opening").textContent = openingLabel();
+  if (state.page === "dashboard") loadBalance();
+}
+
+$("opening-sheet").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const cents = parseSigned($("opening-amount").value);
+  const date = $("opening-date").value;
+  if (cents === null) { setMsg($("opening-msg"), "Inserisci un importo valido, es. 3.200 oppure 0.", true); $("opening-amount").focus(); return; }
+  if (!date) { setMsg($("opening-msg"), "Scegli una data.", true); return; }
+  state.settingsData.opening = { cents, date };
+  const ok = await saveSettingsData("Saldo iniziale salvato solo su questo dispositivo");
+  await afterOpeningChange(ok ? "Saldo iniziale salvato" : "Saldo iniziale salvato su questo dispositivo");
+});
+
+$("opening-remove").addEventListener("click", () => {
+  actionSheet({
+    title: "Rimuovere il saldo iniziale?",
+    message: "Il saldo totale non verrà più mostrato finché non ne imposti uno nuovo.",
+    actions: [{ label: "Rimuovi saldo iniziale", danger: true, onClick: async () => {
+      delete state.settingsData.opening;
+      await saveSettingsData();
+      await afterOpeningChange("Saldo iniziale rimosso");
+    } }],
+  });
+});
 
 init();

@@ -5,6 +5,13 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.2.4", date: "9 novembre 2026",
+    items: [
+      "Nuovo: il saldo totale in cima alla Dashboard, cioè quanto hai in tutto oggi",
+      "Imposta il saldo iniziale a una data e Flunora lo aggiorna con ogni movimento",
+    ],
+  },
+  {
     version: "0.2.3", date: "9 novembre 2026",
     items: [
       "Nuova pagina \"Novità\" con la storia di tutte le versioni",

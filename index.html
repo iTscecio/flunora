@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611092251">
+  <link rel="stylesheet" href="css/style.css?v=202611092303">
 </head>
 <body>
 
@@ -60,6 +60,9 @@
           <button id="year-next" aria-label="Anno successivo">&rsaquo;</button>
         </div>
       </header>
+
+      <!-- saldo totale (0.2.4) -->
+      <button type="button" id="saldo-card" class="card saldo" aria-label="Saldo totale"></button>
 
       <div class="kpis">
         <div class="card kpi"><span class="secondary">Entrate <span class="y"></span></span><strong id="d-entrate">–</strong></div>
@@ -183,6 +186,8 @@
         <ul class="card list settings">
           <li class="tap" id="open-budget"><span class="ico" style="--c:#007aff"><svg viewBox="0 0 24 24"><path d="M4 7h16v12H4zM4 11h16M16 15h.01"/></svg></span>
             <span class="label">Budget mensile</span><span id="set-budget" class="value"></span><span class="chev">&rsaquo;</span></li>
+          <li class="tap" id="open-opening"><span class="ico" style="--c:#34c759"><svg viewBox="0 0 24 24"><path d="M2 6h20v12H2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg></span>
+            <span class="label">Saldo iniziale</span><span id="set-opening" class="value"></span><span class="chev">&rsaquo;</span></li>
           <li class="tap" id="open-categories"><span class="ico" style="--c:#ff9500"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span>
             <span class="label">Categorie</span><span class="chev">&rsaquo;</span></li>
           <li class="soon" data-ver="0.3"><span class="ico" style="--c:#34c759"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span>
@@ -361,6 +366,30 @@
       </div>
     </form>
 
+    <!-- ---------- SALDO INIZIALE (0.2.4) ---------- -->
+    <div id="opening-backdrop" class="sheet-backdrop top"></div>
+    <form id="opening-sheet" class="sheet top" aria-hidden="true" novalidate>
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <button type="button" id="opening-cancel" class="link-btn">Annulla</button>
+        <h2>Saldo iniziale</h2>
+        <button type="submit" id="opening-save" class="link-btn strong">Salva</button>
+      </div>
+      <p class="budget-intro">Quanto avevi in tutto, tra conto e contanti, alla fine di una certa giornata? Non contare gli investimenti.</p>
+      <label class="amount">
+        <span>€</span>
+        <input id="opening-amount" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Saldo iniziale">
+      </label>
+      <div class="group">
+        <label class="group-row"><span>Alla data del</span><input type="date" id="opening-date"></label>
+      </div>
+      <p class="secondary small foot">Il saldo totale si aggiorna con i movimenti dal giorno dopo questa data. Per un saldo negativo scrivi il segno meno, es. −120.</p>
+      <p id="opening-msg" class="msg" role="status"></p>
+      <div id="opening-actions" class="group actions">
+        <button type="button" id="opening-remove" class="action-row danger">Rimuovi saldo iniziale</button>
+      </div>
+    </form>
+
     <!-- ---------- MENU DI SCELTA (stile iOS) ---------- -->
     <div id="action-backdrop" class="sheet-backdrop topmost"></div>
     <div id="action-sheet" class="action-sheet" aria-hidden="true" role="dialog">
@@ -378,9 +407,9 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611092251"></script>
-  <script src="js/releases.js?v=202611092251"></script>
-  <script src="js/icons.js?v=202611092251"></script>
-  <script src="js/app.js?v=202611092251"></script>
+  <script src="js/config.js?v=202611092303"></script>
+  <script src="js/releases.js?v=202611092303"></script>
+  <script src="js/icons.js?v=202611092303"></script>
+  <script src="js/app.js?v=202611092303"></script>
 </body>
 </html>
