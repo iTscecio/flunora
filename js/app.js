@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.3.0";
+const APP_VERSION = "0.3.1";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -31,6 +31,9 @@ const state = {
   budgetMonth: null,                 // budget solo per il mese mostrato (null = usa il fisso)
   budgetTableMissing: false,
   budgetEdit: null,                  // pannello budget aperto
+  slideDir: null,                    // 0.3.1: direzione dell'animazione al cambio mese
+  animateNext: false,                // 0.3.1: anima il prossimo disegno di grafici ed elenco
+  prevIds: null,                     // 0.3.1: movimenti prima di un salvataggio (per evidenziare il nuovo)
   restore: null,                     // ripristino in preparazione { obj, mode }
 };
 
@@ -198,23 +201,34 @@ function route() {
     const [y, m] = arg.split("-").map(Number);
     state.month = new Date(y, m - 1, 1);
   }
+  const prevPage = state.page;
   state.page = p;
   setSelecting(false);
   for (const id of Object.keys(SECTIONS)) $("page-" + id).hidden = id !== p;
   document.querySelectorAll("#tab-pill .tab").forEach((t) => t.classList.toggle("active", t.dataset.page === p));
+  moveLens(true);
+  // 0.3.1: nuova sezione = dissolvenza; stesso Mesi con un altro mese = scivola nella direzione della freccia
+  const pageEl = $("page-" + p);
+  const anim = prevPage !== p ? "enter" : state.slideDir ? `from-${state.slideDir}` : "";
+  state.slideDir = null;
+  if (anim) playClass(pageEl, anim, 420);
+  state.animateNext = true;
   window.scrollTo(0, 0);
   if (p === "dashboard") loadDashboard();
   if (p === "mesi") loadMonth();
 }
 window.addEventListener("hashchange", route);
 
-const goToMonth = (d) => { location.hash = "mesi/" + monthKey(d); };
+const goToMonth = (d) => {
+  state.slideDir = d.getTime() > state.month.getTime() ? "right" : d.getTime() < state.month.getTime() ? "left" : null;
+  location.hash = "mesi/" + monthKey(d);
+};
 
 // =========================================================
 //  DASHBOARD (un anno alla volta)
 // =========================================================
-$("year-prev").addEventListener("click", () => { state.year--; loadDashboard(); });
-$("year-next").addEventListener("click", () => { state.year++; loadDashboard(); });
+$("year-prev").addEventListener("click", () => { state.year--; playClass($("page-dashboard"), "from-left", 420); state.animateNext = true; loadDashboard(); });
+$("year-next").addEventListener("click", () => { state.year++; playClass($("page-dashboard"), "from-right", 420); state.animateNext = true; loadDashboard(); });
 
 async function loadDashboard() {
   loadBalance();   // saldo totale (0.2.4), indipendente dall'anno mostrato
@@ -252,6 +266,7 @@ function renderDashboard(months) {
   $("d-media").textContent = active ? `media ${fmt(Math.round(tot.u / active))}/mese` : "";
 
   renderYearChart(months);
+  state.animateNext = false;
 
   // elenco dei mesi con movimenti, dal più recente
   const ul = $("month-list");
@@ -329,7 +344,10 @@ function renderYearChart(months) {
     svg.append(g);
   });
 
-  $("year-chart").replaceChildren(svg);
+  const box = $("year-chart");
+  box.classList.toggle("animate", !!state.animateNext);
+  svg.querySelectorAll(".bar-in, .bar-out").forEach((r, k) => r.style.setProperty("--i", Math.floor(k / 2)));
+  box.replaceChildren(svg);
 }
 
 // =========================================================
@@ -425,7 +443,7 @@ function renderKpis() {
 
   $("hero").classList.toggle("over", over);
   $("hero-label").textContent = label;
-  $("hero-amount").textContent = rest === null ? fmt(t.uscita) : fmt(Math.abs(rest));
+  countTo($("hero-amount"), rest === null ? t.uscita : Math.abs(rest), fmt);
   $("hero-bar").hidden = rest === null;
   $("hero-fill").style.width = rest === null ? "0" : Math.min(100, Math.round((t.uscita / base) * 100)) + "%";
   $("hero-pct").textContent = rest === null ? "Imposta un budget per sapere quanto ti resta" : pctText;
@@ -462,6 +480,7 @@ function renderDonut() {
   const stack = $("cat-stack"), leg = $("cat-legend");
   stack.hidden = leg.hidden = total === 0;
   stack.classList.toggle("filtering", !!state.filterCat);
+  if (state.animateNext) playClass(stack, "animate", 650);
   leg.classList.toggle("filtering", !!state.filterCat);
 
   stack.replaceChildren(...items.map((it) => {
@@ -534,6 +553,10 @@ function renderList() {
   chip.hidden = !fc;
   if (fc) chip.replaceChildren(catIcon(fc, "sm"), document.createTextNode(fc.name), el("span", "x", "✕"));
 
+  box.classList.toggle("animate", !!state.animateNext);
+  state.animateNext = false;
+  const prevIds = state.prevIds;
+  state.prevIds = null;
   // gruppi per giorno (le righe arrivano già dalla più recente)
   const groups = [];
   for (const tx of rows) {
@@ -544,6 +567,7 @@ function renderList() {
   for (const g of groups) {
     const spese = g.items.filter((t) => t.kind === "uscita").reduce((a, t) => a + t.amount_cents, 0);
     const day = el("section", "day");
+    day.style.setProperty("--i", Math.min(groups.indexOf(g), 8));
     const head = el("div", "day-head");
     head.append(el("span", "d", dayLabel(g.date)), el("span", "t", spese ? "− " + fmt(spese) : ""));
     const ul = el("ul", "card list");
@@ -552,6 +576,7 @@ function renderList() {
       const cat = catById(tx.category_id);
       const li = el("li", "swipe" + (state.selected.has(tx.id) ? " selected" : ""));
       li.dataset.id = tx.id;
+      if (prevIds && !prevIds.has(tx.id)) li.classList.add("just-added");
 
       // pulsante rosso, scoperto dallo scorrimento
       const del = el("button", "swipe-delete");
@@ -702,6 +727,7 @@ async function deleteTransactions(txs) {
     renderList();
     return false;
   }
+  await collapseRows(ids);
   state.transactions = state.transactions.filter((t) => !ids.includes(t.id));
   renderKpis(); renderDonut(); renderList();
 
@@ -849,6 +875,7 @@ $("sheet-delete").addEventListener("click", async () => {
 
 // dopo un salvataggio aggiorna la pagina aperta (in "Mesi" si sposta sul mese del movimento)
 function refreshAfterChange(dateStr) {
+  state.prevIds = new Set(state.transactions.map((t) => t.id));
   const [y, m] = dateStr.split("-").map(Number);
   if (state.page === "mesi") {
     const target = new Date(y, m - 1, 1);
@@ -948,7 +975,7 @@ const saveSections = () => saveSettingsData("Sezioni salvate solo su questo disp
 
 function renderTabbar() {
   const pill = $("tab-pill");
-  pill.replaceChildren();
+  pill.replaceChildren(el("span", "lens no-anim"));
   const on = state.sections.filter((s) => s.on);
   pill.style.setProperty("--n", on.length);
   for (const s of on) {
@@ -960,7 +987,22 @@ function renderTabbar() {
     if (s.id === state.page) a.classList.add("active");
     pill.append(a);
   }
+  requestAnimationFrame(() => moveLens(false));
 }
+
+// porta la "lente" di vetro sotto la sezione attiva (0.3.1)
+function moveLens(animate = true) {
+  const pill = $("tab-pill"), lens = pill?.querySelector(".lens");
+  if (!lens) return;
+  const t = pill.querySelector(".tab.active");
+  lens.classList.toggle("no-anim", !animate);
+  lens.style.opacity = t ? "1" : "0";
+  if (!t) return;
+  lens.style.width = t.offsetWidth + "px";
+  lens.style.transform = `translateX(${t.offsetLeft}px)`;
+  if (!animate) requestAnimationFrame(() => lens.classList.remove("no-anim"));
+}
+window.addEventListener("resize", () => moveLens(false));
 
 // =========================================================
 //  TEMA (per dispositivo)
@@ -1738,7 +1780,7 @@ async function loadBalance() {
     const cents = await computeBalance(o);
     if (!opening()) return;
     const big = card.querySelector(".big");
-    big.textContent = (cents < 0 ? "− " : "") + fmt(Math.abs(cents));
+    countTo(big, cents, (v) => (v < 0 ? "− " : "") + fmt(Math.abs(v)));
     big.classList.toggle("neg", cents < 0);
     const oggi = new Date().toLocaleDateString("it-IT", { day: "numeric", month: "long" });
     card.querySelector(".when").textContent = cents < 0 ? `In negativo oggi, ${oggi}` : `Disponibili oggi, ${oggi}`;
@@ -2248,5 +2290,50 @@ window.addEventListener("scroll", () => {
 }, { passive: true });
 const showBar = () => { document.body.classList.remove("bar-hidden"); lastScrollY = window.scrollY; };
 window.addEventListener("hashchange", showBar);
+
+// =========================================================
+//  ANIMAZIONI (0.3.1) — brevi, e spente con "Riduci movimento"
+// =========================================================
+const reduceMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+// aggiunge una classe per il tempo di un'animazione (riparte anche se c'era già)
+function playClass(node, cls, ms) {
+  if (!node || reduceMotion()) return;
+  node.classList.remove(cls);
+  void node.offsetWidth;
+  node.classList.add(cls);
+  clearTimeout(node["_t_" + cls]);
+  node["_t_" + cls] = setTimeout(() => node.classList.remove(cls), ms);
+}
+
+// fa scorrere un importo dal valore mostrato prima a quello nuovo
+function countTo(node, target, render, ms = 600) {
+  const from = node._value ?? 0;
+  node._value = target;
+  cancelAnimationFrame(node._raf);
+  if (reduceMotion() || from === target) { node.textContent = render(target); return; }
+  const t0 = performance.now();
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3);
+    node.textContent = render(Math.round(from + (target - from) * e));
+    if (k < 1) node._raf = requestAnimationFrame(step);
+  };
+  node._raf = requestAnimationFrame(step);
+}
+
+// richiude le righe eliminate prima di toglierle dall'elenco
+function collapseRows(ids) {
+  if (reduceMotion()) return Promise.resolve();
+  const rows = ids.map((id) => document.querySelector(`#tx-list li[data-id="${CSS.escape(id)}"]`)).filter(Boolean);
+  if (!rows.length) return Promise.resolve();
+  rows.forEach((li) => { li.style.height = li.offsetHeight + "px"; });
+  void document.body.offsetWidth;
+  rows.forEach((li) => li.classList.add("collapsing"));
+  return new Promise((r) => setTimeout(r, 260));
+}
+
+// niente zoom con due dita (Safari) — resta lo Zoom di sistema in Accessibilità
+document.addEventListener("gesturestart", (e) => e.preventDefault(), { passive: false });
+document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
 
 init();

@@ -5,6 +5,17 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.3.1", date: "11 novembre 2026",
+    items: [
+      "Flunora è più fluida: passaggi animati tra Dashboard, Mesi e le altre sezioni",
+      "Nuova barra in basso in stile liquid glass, con la sezione attiva che scivola da una voce all'altra",
+      "I grafici si disegnano all'apertura e gli importi principali scorrono fino al valore",
+      "Pannelli, avvisi e pulsanti rispondono al tocco in modo più morbido",
+      "Lo zoom non si attiva più per sbaglio con il doppio tocco o con due dita",
+      "Se sull'iPhone è attivo \"Riduci movimento\", Flunora resta ferma e veloce",
+    ],
+  },
+  {
     version: "0.3.0", date: "11 novembre 2026",
     items: [
       "Nuovo: fai un backup di tutti i tuoi dati in un file e salvalo dove vuoi (File, iCloud Drive, AirDrop, mail)",

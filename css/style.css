@@ -757,3 +757,106 @@ button.card.saldo.empty { text-align: center; justify-items: center; }
 .tabbar, .gear { transition: transform .32s cubic-bezier(.2, .8, .2, 1), opacity .25s; }
 body.bar-hidden .tabbar { transform: translate(-50%, calc(100% + 40px + env(safe-area-inset-bottom))); }
 @media (prefers-reduced-motion: reduce) { .tabbar, .gear { transition: none; } }
+
+/* =========================================================
+   0.3.1 — LIQUID GLASS, ANIMAZIONI, NIENTE ZOOM
+   ========================================================= */
+/* niente zoom con il doppio tocco (i tocchi rispondono anche più in fretta) */
+html { touch-action: manipulation; }
+
+/* ---------- vetro liquido ---------- */
+:root {
+  --lg-tint: rgba(255, 255, 255, .62); --lg-tint2: rgba(255, 255, 255, .40);
+  --lg-rim: rgba(255, 255, 255, .85); --lg-rim2: rgba(255, 255, 255, .18);
+  --lg-lens: rgba(255, 255, 255, .55);
+  --lg-shadow: 0 10px 28px rgba(0, 0, 0, .14), 0 2px 6px rgba(0, 0, 0, .08);
+  --tab-active: var(--accent);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --lg-tint: rgba(58, 58, 64, .62); --lg-tint2: rgba(30, 30, 34, .50);
+    --lg-rim: rgba(255, 255, 255, .38); --lg-rim2: rgba(255, 255, 255, .06);
+    --lg-lens: rgba(255, 255, 255, .30); --lg-shadow: 0 10px 30px rgba(0, 0, 0, .55);
+    --tab-active: #fff;
+  }
+}
+:root[data-theme="dark"] {
+  --lg-tint: rgba(58, 58, 64, .62); --lg-tint2: rgba(30, 30, 34, .50);
+  --lg-rim: rgba(255, 255, 255, .38); --lg-rim2: rgba(255, 255, 255, .06);
+  --lg-lens: rgba(255, 255, 255, .30); --lg-shadow: 0 10px 30px rgba(0, 0, 0, .55);
+  --tab-active: #fff;
+}
+.glass {
+  isolation: isolate; overflow: hidden; border: 0;
+  background: linear-gradient(180deg, var(--lg-tint), var(--lg-tint2));
+  -webkit-backdrop-filter: blur(18px) saturate(190%) brightness(1.05);
+  backdrop-filter: blur(18px) saturate(190%) brightness(1.05);
+  box-shadow: var(--lg-shadow), inset 0 1px 1px var(--lg-rim), inset 0 -1px 1px var(--lg-rim2);
+}
+.glass::before {      /* riflesso morbido in alto e luce di rimbalzo in basso */
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+  background: radial-gradient(140% 70% at 50% -20%, rgba(255, 255, 255, .45), transparent 55%),
+              radial-gradient(80% 60% at 50% 130%, rgba(255, 255, 255, .18), transparent 60%);
+}
+.glass::after {       /* bordo di luce che gira attorno al vetro */
+  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.2px; pointer-events: none;
+  background: linear-gradient(135deg, var(--lg-rim), var(--lg-rim2) 35%, transparent 55%, var(--lg-rim2) 75%, var(--lg-rim));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+.tabbar .pill { position: relative; }
+.toast.glass, .toast { isolation: isolate; }
+
+/* lente della sezione attiva: scivola da una voce all'altra */
+.lens {
+  position: absolute; top: 4px; bottom: 4px; left: 0; width: 0; border-radius: 28px; z-index: 0; pointer-events: none;
+  background: linear-gradient(180deg, var(--lg-lens), rgba(255, 255, 255, .08));
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, .9), inset 0 -1px 2px rgba(0, 0, 0, .06), 0 2px 8px rgba(0, 0, 0, .10);
+  transition: transform .45s cubic-bezier(.34, 1.45, .64, 1), width .45s cubic-bezier(.34, 1.45, .64, 1);
+}
+.lens.no-anim { transition: none; }
+.tab { position: relative; z-index: 1; }
+.tab.active { background: none; color: var(--tab-active); font-weight: 700; }
+
+/* ---------- risposta al tocco ---------- */
+button, .tap, .tab, .chip, .card.saldo, .swipe .row-content, .leg button, .opt {
+  transition: transform .14s ease, background-color .2s, color .2s, opacity .2s;
+}
+button:active:not(:disabled), .tap:active, .chip:active, .leg button:active, .opt:active { transform: scale(.97); }
+.swipe .row-content:active { background: var(--fill); }
+
+/* ---------- entrata delle pagine ---------- */
+@keyframes fl-page-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes fl-from-right { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes fl-from-left { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+.page.enter > * { animation: fl-page-in .28s cubic-bezier(.2, .8, .2, 1) both; }
+.page.from-right > :not(.page-head) { animation: fl-from-right .28s cubic-bezier(.2, .8, .2, 1) both; }
+.page.from-left > :not(.page-head) { animation: fl-from-left .28s cubic-bezier(.2, .8, .2, 1) both; }
+
+/* ---------- grafici che si disegnano ---------- */
+@keyframes fl-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.year-chart.animate .bar-in, .year-chart.animate .bar-out {
+  transform-box: fill-box; transform-origin: 50% 100%;
+  animation: fl-grow .5s cubic-bezier(.2, .9, .3, 1.08) both; animation-delay: calc(var(--i, 0) * 28ms);
+}
+@keyframes fl-reveal { from { clip-path: inset(0 100% 0 0 round 6px); } to { clip-path: inset(0 0 0 0 round 6px); } }
+.stack.animate { animation: fl-reveal .55s cubic-bezier(.2, .8, .2, 1) both; }
+
+/* ---------- movimenti che compaiono e spariscono ---------- */
+@keyframes fl-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.tx-days.animate .day { animation: fl-rise .3s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i, 0) * 45ms); }
+@keyframes fl-new-row { 0% { background: var(--accent-soft); } 100% { background: var(--card); } }
+.swipe.just-added .row-content { animation: fl-new-row 1.2s ease-out; }
+.list > li.collapsing { transition: height .26s cubic-bezier(.2, .8, .2, 1), opacity .2s; height: 0 !important; opacity: 0; overflow: hidden; }
+
+/* ---------- pannelli con un piccolo rimbalzo ---------- */
+.sheet { transition: transform .42s cubic-bezier(.3, 1.18, .5, 1), visibility 0s linear .42s; }
+.sheet.open { transition: transform .42s cubic-bezier(.3, 1.18, .5, 1); }
+
+/* ---------- "Riduci movimento": tutto fermo ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important; transition-delay: 0s !important;
+  }
+}
