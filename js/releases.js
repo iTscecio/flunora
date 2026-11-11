@@ -5,6 +5,14 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.3.2", date: "11 novembre 2026",
+    items: [
+      "Nuovo: nascondi il saldo totale con un tocco sull'occhio: al posto dell'importo compare ****** €",
+      "Tocca di nuovo l'occhio per rivederlo",
+      "La scelta resta anche chiudendo e riaprendo Flunora (vale per questo dispositivo)",
+    ],
+  },
+  {
     version: "0.3.1", date: "11 novembre 2026",
     items: [
       "Flunora è più fluida: passaggi animati tra Dashboard, Mesi e le altre sezioni",

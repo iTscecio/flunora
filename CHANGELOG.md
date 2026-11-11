@@ -2,6 +2,12 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.3.2
+- Saldo totale nascondibile: pulsante a forma di occhio sulla carta del saldo; nascosto mostra "****** €", senza colore rosso e senza "in negativo" per non far capire nulla
+- Scelta salvata sul dispositivo (localStorage `flunora.hideSaldo`), come il tema
+- Con il saldo nascosto l'importo non scorre all'apertura; mostrandolo scorre da zero al valore
+- Nessuno script Supabase
+
 ## 0.3.1
 - Barra in basso in stile liquid glass (sfocatura, riflessi, bordo luminoso; tinta più piena in tema scuro) con una "lente" che scivola sulla sezione attiva
 - Transizioni tra le pagine (dissolvenza) e tra mesi/anni (scorrimento a destra o sinistra)

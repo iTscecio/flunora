@@ -868,3 +868,18 @@ button:active:not(:disabled), .tap:active, .chip:active, .leg button:active, .op
     transition-duration: .001ms !important; transition-delay: 0s !important;
   }
 }
+
+/* =========================================================
+   0.3.2 — SALDO NASCOSTO
+   ========================================================= */
+.saldo-wrap { position: relative; }
+.saldo-eye {
+  position: absolute; top: 8px; right: 8px; width: 44px; height: 44px;
+  border: 0; background: none; border-radius: 50%; display: grid; place-items: center;
+  color: var(--accent); cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.saldo-eye[hidden] { display: none; }
+.saldo-eye svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.saldo-eye:active { background: var(--fill); }
+.saldo .lbl { padding-right: 40px; }
+.saldo .big.masked { letter-spacing: 1px; }

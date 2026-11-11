@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.3.1";
+const APP_VERSION = "0.3.2";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -33,6 +33,7 @@ const state = {
   budgetEdit: null,                  // pannello budget aperto
   slideDir: null,                    // 0.3.1: direzione dell'animazione al cambio mese
   animateNext: false,                // 0.3.1: anima il prossimo disegno di grafici ed elenco
+  balance: null,                     // 0.3.2: saldo totale calcolato (centesimi)
   freezeBar: false,                  // 0.3.1: barra ferma mentre una riga eliminata si richiude
   prevIds: null,                     // 0.3.1: movimenti prima di un salvataggio (per evidenziare il nuovo)
   restore: null,                     // ripristino in preparazione { obj, mode }
@@ -1775,25 +1776,67 @@ async function loadBalance() {
       <span class="secondary">Indica quanto avevi in una certa data: da lì Flunora calcola il tuo saldo totale con i movimenti.</span>
       <span class="cta">Imposta il saldo iniziale</span>`;
     card.setAttribute("aria-label", "Imposta il saldo iniziale");
+    $("saldo-eye").hidden = true;
     return;
   }
+  $("saldo-eye").hidden = false;
+  updateEye();
   if (!card.querySelector(".big")) {
     card.replaceChildren(el("span", "lbl", "Saldo totale"), el("span", "big", "–"), el("span", "when", ""));
   }
   try {
     const cents = await computeBalance(o);
     if (!opening()) return;
-    const big = card.querySelector(".big");
-    countTo(big, cents, (v) => (v < 0 ? "− " : "") + fmt(Math.abs(v)));
-    big.classList.toggle("neg", cents < 0);
-    const oggi = new Date().toLocaleDateString("it-IT", { day: "numeric", month: "long" });
-    card.querySelector(".when").textContent = cents < 0 ? `In negativo oggi, ${oggi}` : `Disponibili oggi, ${oggi}`;
-    card.setAttribute("aria-label", `Saldo totale ${big.textContent}. Tocca per cambiare il saldo iniziale`);
+    state.balance = cents;
+    showBalance(false);
   } catch (err) {
+    state.balance = null;
     card.querySelector(".big").textContent = "–";
     card.querySelector(".when").textContent = "Saldo non disponibile: " + traduciErrore(err.message || "");
   }
 }
+
+// ---------- 0.3.2: saldo nascosto (scelta salvata su questo dispositivo) ----------
+const SALDO_MASK = "****** €";
+const saldoHidden = () => { try { return localStorage.getItem("flunora.hideSaldo") === "1"; } catch { return false; } };
+const EYE = '<svg viewBox="0 0 24 24"><path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6 0 9.5 7 9.5 7a17 17 0 0 1-3.1 3.9M6.2 6.6C3.9 8.2 2.5 12 2.5 12s3.5 7 9.5 7a9.6 9.6 0 0 0 4.2-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+
+function updateEye() {
+  const eye = $("saldo-eye"), hidden = saldoHidden();
+  eye.innerHTML = hidden ? EYE_OFF : EYE;
+  eye.setAttribute("aria-label", hidden ? "Mostra il saldo totale" : "Nascondi il saldo totale");
+  eye.setAttribute("aria-pressed", String(hidden));
+}
+
+// scrive il saldo nella carta: nascosto con gli asterischi, oppure l'importo (che scorre se `fromZero`)
+function showBalance(fromZero) {
+  const card = $("saldo-card"), big = card.querySelector(".big"), cents = state.balance;
+  if (!big || cents == null) return;
+  const oggi = new Date().toLocaleDateString("it-IT", { day: "numeric", month: "long" });
+  updateEye();
+  if (saldoHidden()) {
+    cancelAnimationFrame(big._raf);
+    big._value = 0;                                  // al prossimo "mostra" l'importo scorre da zero
+    big.textContent = SALDO_MASK;
+    big.classList.remove("neg");                     // nemmeno il rosso deve far capire se è negativo
+    big.classList.add("masked");
+    card.querySelector(".when").textContent = `Oggi, ${oggi}`;
+    card.setAttribute("aria-label", "Saldo totale nascosto. Tocca per cambiare il saldo iniziale");
+    return;
+  }
+  big.classList.remove("masked");
+  if (fromZero) big._value = 0;
+  countTo(big, cents, (v) => (v < 0 ? "− " : "") + fmt(Math.abs(v)));
+  big.classList.toggle("neg", cents < 0);
+  card.querySelector(".when").textContent = cents < 0 ? `In negativo oggi, ${oggi}` : `Disponibili oggi, ${oggi}`;
+  card.setAttribute("aria-label", `Saldo totale ${(cents < 0 ? "− " : "") + fmt(Math.abs(cents))}. Tocca per cambiare il saldo iniziale`);
+}
+
+$("saldo-eye").addEventListener("click", () => {
+  try { localStorage.setItem("flunora.hideSaldo", saldoHidden() ? "0" : "1"); } catch {}
+  showBalance(true);
+});
 
 function openingLabel() {
   const o = opening();

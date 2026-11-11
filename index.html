@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611111253">
+  <link rel="stylesheet" href="css/style.css?v=202611111259">
 </head>
 <body>
 
@@ -70,7 +70,10 @@
       </div>
 
       <!-- saldo totale (0.2.4) -->
-      <button type="button" id="saldo-card" class="card saldo" aria-label="Saldo totale"></button>
+      <div class="saldo-wrap">
+        <button type="button" id="saldo-card" class="card saldo" aria-label="Saldo totale"></button>
+        <button type="button" id="saldo-eye" class="saldo-eye" hidden></button>
+      </div>
 
       <div class="kpis">
         <div class="card kpi"><span class="secondary">Entrate <span class="y"></span></span><strong id="d-entrate">–</strong></div>
@@ -471,9 +474,9 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611111253"></script>
-  <script src="js/releases.js?v=202611111253"></script>
-  <script src="js/icons.js?v=202611111253"></script>
-  <script src="js/app.js?v=202611111253"></script>
+  <script src="js/config.js?v=202611111259"></script>
+  <script src="js/releases.js?v=202611111259"></script>
+  <script src="js/icons.js?v=202611111259"></script>
+  <script src="js/app.js?v=202611111259"></script>
 </body>
 </html>
