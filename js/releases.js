@@ -5,6 +5,16 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.3.3", date: "11 novembre 2026",
+    items: [
+      "Nuovo: imposta un budget mensile per ogni categoria di spesa, da \"Budget per categoria\" nella pagina Mesi",
+      "Nella carta Categorie vedi per ogni categoria quanto hai speso e quanto ti resta",
+      "La barra diventa arancione quando sei vicino al limite e rossa quando lo superi",
+      "Quando una spesa ti porta oltre l'80% o oltre il limite, Flunora ti avvisa",
+      "Chiudi i pannelli anche trascinando in basso la lineetta in alto",
+    ],
+  },
+  {
     version: "0.3.2", date: "11 novembre 2026",
     items: [
       "Nuovo: nascondi il saldo totale con un tocco sull'occhio: al posto dell'importo compare ****** €",

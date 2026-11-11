@@ -2,6 +2,14 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.3.3
+- Budget per categoria: colonna `categories.budget_cents` (vuota = nessun limite, > 0), uguale per tutti i mesi, solo per le categorie di spesa (script `supabase/migrations/0.3.3_budget_categorie.sql`, rieseguibile)
+- Carta Categorie: con almeno un budget la legenda diventa un elenco con speso / budget, barra verde, arancione dall'80%, rossa oltre il limite e testo "Restano", "Quasi finito", "Budget esaurito", "Oltre di"; le categorie senza budget mostrano importo e percentuale; tocco su una riga = filtro come prima
+- Pannello "Budget per categoria" dalla carta Categorie: un campo per ogni categoria di spesa attiva, con lo speso del mese, totale e confronto con il budget del mese; più categorie salvate insieme
+- Avviso dopo aver salvato una spesa quando la categoria supera l'80%, raggiunge o supera il limite (solo al passaggio della soglia)
+- Ripristino backup (`restore_backup`): conserva il budget delle categorie; con "Unisci" lo assegna alle categorie esistenti che non ne hanno uno
+- Tutti i pannelli dal basso si chiudono trascinando in basso la maniglia o la riga del titolo (oltre 1/4 dell'altezza o gesto veloce); altrimenti tornano al loro posto
+
 ## 0.3.2
 - Saldo totale nascondibile: pulsante a forma di occhio sulla carta del saldo; nascosto mostra "****** €", senza colore rosso e senza "in negativo" per non far capire nulla
 - Scelta salvata sul dispositivo (localStorage `flunora.hideSaldo`), come il tema

@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.3.2";
+const APP_VERSION = "0.3.3";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -477,10 +477,17 @@ function renderDonut() {
   const items = [...byCat].map(([id, cents]) => ({ id, cat: catById(id), cents })).sort((a, b) => b.cents - a.cents);
   if (state.filterCat && !byCat.has(state.filterCat) && catById(state.filterCat)?.kind === "uscita") state.filterCat = null;
 
+  // 0.3.3: categorie di spesa con un budget (anche senza spese nel mese)
+  const budgeted = state.categories.filter((c) => c.kind === "uscita" && c.budget_cents > 0 && (!c.archived || byCat.has(c.id)));
+  const useBudgets = budgeted.length > 0;
+  renderCatBudLink();
+
   $("cat-total").textContent = total ? fmt(total) : "";
-  $("cat-empty").hidden = total > 0;
+  $("cat-empty").hidden = total > 0 || useBudgets;
   const stack = $("cat-stack"), leg = $("cat-legend");
-  stack.hidden = leg.hidden = total === 0;
+  stack.hidden = total === 0;
+  leg.hidden = total === 0 && !useBudgets;
+  leg.className = useBudgets ? "bleg" : "leg";
   stack.classList.toggle("filtering", !!state.filterCat);
   if (state.animateNext) playClass(stack, "animate", 650);
   leg.classList.toggle("filtering", !!state.filterCat);
@@ -491,6 +498,14 @@ function renderDonut() {
     s.style.background = it.cat?.color || "#8e8e93";
     return s;
   }));
+  if (useBudgets) {
+    leg.classList.toggle("filtering", !!state.filterCat);
+    const withB = budgeted.map((c) => ({ id: c.id, cat: c, cents: byCat.get(c.id) || 0 }))
+      .sort((a, b) => b.cents / b.cat.budget_cents - a.cents / a.cat.budget_cents || b.cents - a.cents);
+    const noB = items.filter((it) => !(it.cat?.budget_cents > 0));
+    leg.replaceChildren(...withB.map((it) => budgetRow(it)), ...noB.map((it) => budgetRow(it, total)));
+    return;
+  }
   leg.replaceChildren(...items.map((it) => {
     const b = el("button", it.id === state.filterCat ? "on" : "");
     b.type = "button";
@@ -501,6 +516,36 @@ function renderDonut() {
     b.addEventListener("click", () => setFilter(state.filterCat === it.id ? null : it.id));
     return b;
   }));
+}
+
+// una riga della carta Categorie con il budget (o, senza budget, importo e percentuale)
+function budgetRow(it, total = 0) {
+  const bud = it.cat?.budget_cents > 0 ? it.cat.budget_cents : 0;
+  const k = bud ? it.cents / bud : 0;
+  const level = !bud ? "nob" : k > 1 ? "over" : k >= 0.8 ? "warn" : "ok";
+  const b = el("button", `brow ${level}` + (it.id === state.filterCat ? " on" : ""));
+  b.type = "button";
+  b.setAttribute("aria-pressed", it.id === state.filterCat ? "true" : "false");
+  const val = el("span", "val");
+  val.append(el("b", null, fmt(it.cents)));
+  if (bud) val.append(document.createTextNode(" di " + fmt(bud)));
+  else val.append(document.createTextNode(" · " + Math.max(1, Math.round((it.cents / (total || 1)) * 100)) + "%"));
+  b.append(catIcon(it.cat, "sm"), el("span", "nm", it.cat?.name || "?"), val);
+  if (bud) {
+    const bar = el("span", "bar"), fill = el("i");
+    fill.style.width = Math.min(100, k * 100) + "%";
+    bar.append(fill);
+    const st = k > 1 ? "Oltre di " + fmt(it.cents - bud)
+      : k === 1 ? "Budget esaurito"
+      : k >= 0.8 ? "Quasi finito · restano " + fmt(bud - it.cents)
+      : "Restano " + fmt(bud - it.cents);
+    b.append(bar, el("span", "st", st));
+    b.setAttribute("aria-label", `${it.cat.name}: ${fmt(it.cents)} di ${fmt(bud)}. ${st}`);
+  } else {
+    b.append(el("span", "st", "Nessun budget"));
+  }
+  b.addEventListener("click", () => setFilter(state.filterCat === it.id ? null : it.id));
+  return b;
 }
 
 function setFilter(id) {
@@ -855,6 +900,7 @@ $("sheet").addEventListener("submit", async (e) => {
   const save = $("sheet-save");
   save.disabled = true;
   const wasEdit = !!state.editing;
+  const old = state.editing ? { ...state.editing } : null;
   const { error } = wasEdit
     ? await sb.from("transactions").update(row).eq("id", state.editing.id)
     : await sb.from("transactions").insert(row);
@@ -865,6 +911,8 @@ $("sheet").addEventListener("submit", async (e) => {
   closeSheet();
   toast(wasEdit ? "Movimento aggiornato" : "Movimento salvato");
   refreshAfterChange(row.date);
+  // 0.3.3: avviso se questa spesa avvicina o supera il budget della categoria
+  budgetAlert(row, old).then((text) => { if (text) toast(text); });
   // 0.2.2: dopo lo stipendio, se quel mese non ha un budget, lo chiede
   if (!wasEdit && row.kind === "entrata" && /stipendio/i.test(catById(row.category_id)?.name || "")) {
     askBudgetAfterSalary(row);
@@ -1493,6 +1541,125 @@ async function deleteCategory(c, target) {
   afterCategoriesChanged();
   if (state.page === "mesi") loadMonth();
   toast(target ? `Eliminata · movimenti spostati in ${target.name}` : "Categoria eliminata");
+}
+
+// =========================================================
+//  BUDGET PER CATEGORIA (0.3.3)
+//  Un limite mensile per ogni categoria di spesa (colonna categories.budget_cents), uguale per tutti i mesi.
+// =========================================================
+function renderCatBudLink() {
+  const cats = state.categories.filter((c) => c.kind === "uscita" && !c.archived);
+  const n = cats.filter((c) => c.budget_cents > 0).length;
+  $("catbud-count").textContent = n ? `${n} di ${cats.length} ›` : "Imposta ›";
+}
+
+$("catbud-link").addEventListener("click", openCatBudSheet);
+$("catbud-cancel").addEventListener("click", closeCatBudSheet);
+$("catbud-backdrop").addEventListener("click", closeCatBudSheet);
+
+function openCatBudSheet() {
+  const spent = new Map();
+  for (const t of state.transactions) if (t.kind === "uscita") spent.set(t.category_id, (spent.get(t.category_id) || 0) + t.amount_cents);
+  const mese = meseNome(state.month);
+  const list = $("catbud-list");
+  list.replaceChildren(...state.categories.filter((c) => c.kind === "uscita" && !c.archived).map((c) => {
+    const row = el("label", "catbud-row");
+    const txt = el("span", "nm");
+    txt.append(el("span", null, c.name), el("small", null, `Spesi a ${mese}: ${fmt(spent.get(c.id) || 0)}`));
+    const inp = el("input");
+    inp.dataset.id = c.id;
+    inp.inputMode = "decimal";
+    inp.autocomplete = "off";
+    inp.placeholder = "Nessuno";
+    inp.setAttribute("aria-label", `Budget mensile per ${c.name}`);
+    inp.value = c.budget_cents > 0 ? fmtPlain(c.budget_cents) : "";
+    const eur = el("span", "eur", "€");
+    const sync = () => row.classList.toggle("has-value", inp.value.trim() !== "");
+    inp.addEventListener("input", () => { sync(); setMsg($("catbud-msg"), ""); updateCatBudSum(); });
+    inp.addEventListener("blur", () => { const v = parseAmount(inp.value); if (v) inp.value = fmtPlain(v); });
+    row.append(catIcon(c), txt, inp, eur);
+    sync();
+    return row;
+  }));
+  setMsg($("catbud-msg"), "");
+  updateCatBudSum();
+  $("catbud-sheet").scrollTop = 0;
+  $("catbud-sheet").classList.add("open");
+  $("catbud-sheet").setAttribute("aria-hidden", "false");
+  $("catbud-backdrop").classList.add("open");
+}
+
+function closeCatBudSheet() {
+  $("catbud-sheet").classList.remove("open");
+  $("catbud-sheet").setAttribute("aria-hidden", "true");
+  $("catbud-backdrop").classList.remove("open");
+  if ($("catbud-sheet").contains(document.activeElement)) document.activeElement.blur();
+}
+
+// importo senza simbolo, es. 1.500,00 (per i campi da modificare)
+function fmtPlain(cents) {
+  return (cents / 100).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function updateCatBudSum() {
+  let sum = 0;
+  for (const inp of $("catbud-list").querySelectorAll("input")) sum += parseAmount(inp.value) || 0;
+  const monthBud = state.budgetMonth ?? defaultBudget();
+  let t = sum ? `Totale per categoria: ${fmt(sum)}` : "Nessun budget per categoria";
+  if (sum && monthBud) t += ` · budget del mese: ${fmt(monthBud)}` + (sum > monthBud ? " (la somma lo supera)" : "");
+  $("catbud-sum").textContent = t + ". Valgono tutti i mesi.";
+}
+
+$("catbud-sheet").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const msg = $("catbud-msg");
+  const changes = [];
+  for (const inp of $("catbud-list").querySelectorAll("input")) {
+    const raw = inp.value.trim();
+    const v = raw ? parseAmount(raw) : null;
+    if (raw && v === null) { setMsg(msg, "Controlla gli importi, es. 150 o 80,50.", true); inp.focus(); return; }
+    const c = catById(inp.dataset.id);
+    const next = v > 0 ? v : null;
+    if ((c.budget_cents || null) !== next) changes.push({ c, next });
+  }
+  if (!changes.length) return closeCatBudSheet();
+  const btn = $("catbud-save");
+  btn.disabled = true;
+  const results = await Promise.all(changes.map(({ c, next }) =>
+    sb.from("categories").update({ budget_cents: next }).eq("id", c.id)));
+  btn.disabled = false;
+  const err = results.find((r) => r.error)?.error;
+  if (err) {
+    setMsg(msg, /budget_cents|schema cache|PGRST204|42703/i.test(`${err.message} ${err.code}`)
+      ? "Esegui prima lo script 0.3.3 in Supabase." : "Errore: " + traduciErrore(err.message), true);
+    return;
+  }
+  for (const { c, next } of changes) c.budget_cents = next;
+  closeCatBudSheet();
+  toast("Budget per categoria salvati");
+  renderDonut();
+});
+
+// dopo aver salvato una spesa: testo dell'avviso se la categoria passa l'80% o il limite (altrimenti null)
+async function budgetAlert(row, old) {
+  const cat = catById(row.category_id);
+  if (row.kind !== "uscita" || !(cat?.budget_cents > 0)) return null;
+  const bud = cat.budget_cents;
+  const [y, m] = row.date.split("-").map(Number);
+  const from = isoDate(new Date(y, m - 1, 1)), to = isoDate(new Date(y, m, 1));
+  const { data, error } = await sb.from("transactions").select("amount_cents")
+    .eq("category_id", cat.id).eq("kind", "uscita").gte("date", from).lt("date", to);
+  if (error || !data) return null;
+  const after = data.reduce((a, t) => a + t.amount_cents, 0);
+  // quanto c'era prima di questo salvataggio
+  const sameBefore = old && old.kind === "uscita" && old.category_id === cat.id && old.date.slice(0, 7) === row.date.slice(0, 7);
+  const before = after - row.amount_cents + (sameBefore ? old.amount_cents : 0);
+  if (after > bud && before <= bud) return `${cat.name}: budget superato di ${fmt(after - bud)}`;
+  if (after === bud && before < bud) return `${cat.name}: budget esaurito`;
+  if (after >= bud * 0.8 && after < bud && before < bud * 0.8) {
+    return `${cat.name}: ${Math.floor((after / bud) * 100)}% del budget usato · restano ${fmt(bud - after)}`;
+  }
+  return null;
 }
 
 // =========================================================
@@ -2409,6 +2576,47 @@ function collapseRows(ids) {
     }, 250);
   }, 190));
 }
+
+// =========================================================
+//  PANNELLI: si chiudono trascinando in basso la maniglia o il titolo (0.3.3)
+// =========================================================
+function attachSheetDrag(sheet) {
+  const backdrop = sheet.previousElementSibling?.classList.contains("sheet-backdrop") ? sheet.previousElementSibling : null;
+  if (!backdrop) return;
+  let startY = 0, dy = 0, lastY = 0, lastT = 0, v = 0, dragging = false, id = null;
+
+  const reset = () => {
+    sheet.classList.remove("dragging");
+    sheet.style.transform = "";
+    backdrop.style.opacity = "";
+  };
+  sheet.addEventListener("pointerdown", (e) => {
+    if (!sheet.classList.contains("open") || (e.pointerType === "mouse" && e.button !== 0)) return;
+    if (!e.target.closest(".grabber, .sheet-head") || e.target.closest("button, input, a, select, textarea")) return;
+    startY = lastY = e.clientY; lastT = e.timeStamp; dy = 0; v = 0; dragging = true; id = e.pointerId;
+    try { sheet.setPointerCapture(id); } catch {}
+    sheet.classList.add("dragging");
+  });
+  sheet.addEventListener("pointermove", (e) => {
+    if (!dragging || e.pointerId !== id) return;
+    const raw = e.clientY - startY;
+    dy = raw > 0 ? raw : -Math.sqrt(-raw) * 2;            // verso l'alto fa solo un po' di resistenza
+    const dt = e.timeStamp - lastT;
+    if (dt > 0) { v = (e.clientY - lastY) / dt; lastY = e.clientY; lastT = e.timeStamp; }
+    sheet.style.transform = `translateY(${dy}px)`;
+    backdrop.style.opacity = String(Math.max(0, 1 - Math.max(0, dy) / sheet.offsetHeight));
+  });
+  const end = (e) => {
+    if (!dragging || e.pointerId !== id) return;
+    dragging = false;
+    const close = dy > sheet.offsetHeight * 0.25 || (v > 0.6 && dy > 30);
+    reset();                                               // riparte dalla posizione attuale con la transizione
+    if (close) backdrop.click();                           // chiude come "Annulla"
+  };
+  sheet.addEventListener("pointerup", end);
+  sheet.addEventListener("pointercancel", end);
+}
+document.querySelectorAll(".sheet").forEach(attachSheetDrag);
 
 // niente zoom con due dita (Safari) — resta lo Zoom di sistema in Accessibilità
 document.addEventListener("gesturestart", (e) => e.preventDefault(), { passive: false });
