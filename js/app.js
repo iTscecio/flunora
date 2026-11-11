@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.2.4";
+const APP_VERSION = "0.3.0";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -31,6 +31,7 @@ const state = {
   budgetMonth: null,                 // budget solo per il mese mostrato (null = usa il fisso)
   budgetTableMissing: false,
   budgetEdit: null,                  // pannello budget aperto
+  restore: null,                     // ripristino in preparazione { obj, mode }
 };
 
 // ---------- utilità ----------
@@ -168,6 +169,7 @@ async function startApp() {
   renderTabbar();
   route();
   maybeShowWhatsNew();
+  maybeAutoCopy();
 }
 
 async function loadCategories() {
@@ -216,6 +218,7 @@ $("year-next").addEventListener("click", () => { state.year++; loadDashboard(); 
 
 async function loadDashboard() {
   loadBalance();   // saldo totale (0.2.4), indipendente dall'anno mostrato
+  renderBackupBanner();   // promemoria backup (0.3.0)
   const y = state.year;
   $("year-label").textContent = y;
   document.querySelectorAll("#page-dashboard .y").forEach((s) => (s.textContent = y));
@@ -993,6 +996,7 @@ function openSettings() {
   renderSectionsList();
   $("set-budget").textContent = defaultBudget() ? fmt(defaultBudget()) : "Non impostato";
   $("set-opening").textContent = openingLabel();
+  $("set-backup").textContent = lastBackupText();
   $("settings").scrollTop = 0;
   $("settings").classList.add("open");
   $("settings").setAttribute("aria-hidden", "false");
@@ -1803,5 +1807,430 @@ $("opening-remove").addEventListener("click", () => {
     } }],
   });
 });
+
+// =========================================================
+//  BACKUP E RIPRISTINO (0.3.0)
+// =========================================================
+const BACKUP_FORMAT = 1;
+const KINDS = ["entrata", "uscita", "investimento"];
+const DEFAULT_REMINDER_DAYS = 30;
+const LS_SNOOZE = "flunora.backupSnooze";
+
+// legge tutte le righe di una tabella, a pagine da 1000 (limite di Supabase)
+async function fetchAll(table, orderCol = "id") {
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await sb.from(table).select("*").order(orderCol, { ascending: true }).range(from, from + 999);
+    if (error) throw error;
+    out.push(...data);
+    if (data.length < 1000) return out;
+  }
+}
+// come fetchAll, ma se la tabella non c'è ancora (script non eseguito) restituisce []
+async function fetchAllOptional(table, orderCol) {
+  try { return await fetchAll(table, orderCol); } catch { return []; }
+}
+const stripUser = (rows) => rows.map(({ user_id, ...r }) => r);
+
+async function buildBackup() {
+  const [categories, transactions, budgets, recurring] = await Promise.all([
+    fetchAll("categories"), fetchAll("transactions"),
+    fetchAllOptional("budgets", "month"), fetchAllOptional("recurring"),
+  ]);
+  const { sections, budget_cents, opening, backup_reminder_days } = state.settingsData || {};
+  return {
+    app: "flunora",
+    format: BACKUP_FORMAT,
+    app_version: APP_VERSION,
+    created_at: new Date().toISOString(),
+    data: {
+      categories: stripUser(categories),
+      transactions: stripUser(transactions),
+      budgets: budgets.map((b) => ({ month: b.month, amount_cents: b.amount_cents })),
+      recurring: stripUser(recurring),
+      settings: { sections: sections || state.sections, budget_cents, opening, backup_reminder_days },
+    },
+  };
+}
+
+// ---------- controllo del file ----------
+function validateBackup(obj) {
+  const fail = (m) => ({ ok: false, error: m });
+  if (!obj || typeof obj !== "object" || obj.app !== "flunora") return fail("Questo file non è un backup di Flunora.");
+  if (!Number.isInteger(obj.format) || obj.format < 1) return fail("Il file di backup è danneggiato.");
+  if (obj.format > BACKUP_FORMAT) return fail("Questo backup è stato creato con una versione più recente di Flunora: aggiorna l'app e riprova.");
+  const d = obj.data;
+  if (!d || !Array.isArray(d.categories) || !Array.isArray(d.transactions)) return fail("Il file di backup è danneggiato.");
+  const ids = new Set();
+  for (const c of d.categories) {
+    if (!c || typeof c.id !== "string" || typeof c.name !== "string" || !c.name.trim() || !KINDS.includes(c.kind)) {
+      return fail("Il backup contiene una categoria non valida.");
+    }
+    ids.add(c.id);
+  }
+  let from = null, to = null;
+  for (const t of d.transactions) {
+    if (!t || !/^\d{4}-\d{2}-\d{2}$/.test(t.date) || !Number.isInteger(t.amount_cents) || t.amount_cents <= 0
+        || !KINDS.includes(t.kind) || !ids.has(t.category_id)) {
+      return fail("Il backup contiene un movimento non valido.");
+    }
+    if (!from || t.date < from) from = t.date;
+    if (!to || t.date > to) to = t.date;
+  }
+  if (d.budgets && !Array.isArray(d.budgets)) return fail("Il file di backup è danneggiato.");
+  return {
+    ok: true,
+    summary: { created_at: obj.created_at, version: obj.app_version, tx: d.transactions.length, cat: d.categories.length, from, to },
+  };
+}
+
+// ---------- condividere o scaricare un file ----------
+async function deliverFile(name, type, content) {
+  const blob = new Blob([content], { type });
+  const file = new File([blob], name, { type });
+  if (navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: name }); return true; }
+    catch (e) { if (e?.name === "AbortError") return false; /* altrimenti prova a scaricare */ }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return true;
+}
+
+// ---------- copie sul dispositivo (IndexedDB) ----------
+const idbOpen = () => new Promise((resolve, reject) => {
+  const req = indexedDB.open("flunora", 1);
+  req.onupgradeneeded = () => req.result.createObjectStore("copies", { keyPath: "id", autoIncrement: true });
+  req.onsuccess = () => resolve(req.result);
+  req.onerror = () => reject(req.error);
+});
+async function idbRun(mode, fn) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("copies", mode);
+    const result = fn(tx.objectStore("copies"));
+    tx.oncomplete = () => resolve(result?.result ?? result);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+async function listCopies() {
+  try {
+    const all = await idbRun("readonly", (st) => st.getAll());
+    return (all || []).filter((c) => c.user_id === state.user.id).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  } catch { return []; }
+}
+async function saveCopy(reason) {
+  const backup = await buildBackup();
+  await idbRun("readwrite", (st) => st.add({
+    user_id: state.user.id, created_at: backup.created_at, reason,
+    tx: backup.data.transactions.length, json: JSON.stringify(backup),
+  }));
+  // tiene solo le ultime 3 di questo utente
+  const mine = await listCopies();
+  for (const old of mine.slice(3)) await idbRun("readwrite", (st) => st.delete(old.id));
+}
+async function maybeAutoCopy() {
+  try {
+    const last = (await listCopies())[0];
+    if (last && Date.now() - Date.parse(last.created_at) < 7 * 864e5) return;
+    const { count } = await sb.from("transactions").select("id", { count: "exact", head: true });
+    if (count) await saveCopy("auto");
+  } catch { /* le copie sono un aiuto in più: un errore non blocca l'app */ }
+}
+
+// ---------- pagina Backup ----------
+const daysSince = (iso) => Math.floor((Date.now() - Date.parse(iso)) / 864e5);
+const reminderDays = () => state.settingsData?.backup_reminder_days ?? DEFAULT_REMINDER_DAYS;
+function lastBackupText() {
+  const iso = state.settingsData?.last_backup_at;
+  if (!iso) return "Mai";
+  const n = daysSince(iso);
+  return n === 0 ? "Oggi" : n === 1 ? "Ieri" : `${n} giorni fa`;
+}
+const whenText = (iso) => {
+  const d = new Date(iso), n = daysSince(iso);
+  const time = d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+  if (n === 0 && new Date().getDate() === d.getDate()) return `Oggi, ${time}`;
+  return d.toLocaleDateString("it-IT", { day: "numeric", month: "long" }) + `, ${time}`;
+};
+
+$("open-backup").addEventListener("click", openBackup);
+$("backup-back").addEventListener("click", () => {
+  $("backup").classList.remove("open");
+  $("backup").setAttribute("aria-hidden", "true");
+});
+
+async function openBackup() {
+  renderBackupPage();
+  $("backup").scrollTop = 0;
+  $("backup").classList.add("open");
+  $("backup").setAttribute("aria-hidden", "false");
+  renderCopies();
+}
+
+function renderBackupPage() {
+  const iso = state.settingsData?.last_backup_at;
+  if (iso) {
+    const n = daysSince(iso);
+    $("backup-title").textContent = n === 0 ? "Ultimo backup oggi" : n === 1 ? "Ultimo backup ieri" : `Ultimo backup ${n} giorni fa`;
+    const cnt = state.settingsData.last_backup_count;
+    $("backup-sub").textContent = new Date(iso).toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" })
+      + (cnt != null ? ` · ${cnt} ${cnt === 1 ? "movimento" : "movimenti"}` : "");
+  } else {
+    $("backup-title").textContent = "Non hai ancora fatto un backup";
+    $("backup-sub").textContent = "Salva tutti i tuoi dati in un file, sul telefono o su iCloud Drive.";
+  }
+  document.querySelectorAll("#reminder-seg button").forEach((b) => b.classList.toggle("on", Number(b.dataset.days) === reminderDays()));
+}
+
+async function renderCopies() {
+  const ul = $("copies-list");
+  const copies = await listCopies();
+  ul.replaceChildren();
+  if (!copies.length) {
+    ul.append(el("li", null, "Nessuna copia per ora"));
+    ul.firstChild.classList.add("secondary");
+    return;
+  }
+  for (const c of copies) {
+    const li = el("li", "copy");
+    const grow = el("div", "grow");
+    grow.append(el("span", "t", whenText(c.created_at)),
+      el("span", "s", `${c.reason === "auto" ? "Automatica settimanale" : "Prima di un ripristino"} · ${c.tx} ${c.tx === 1 ? "movimento" : "movimenti"}`));
+    const btn = el("button", "act", "Ripristina");
+    btn.type = "button";
+    btn.addEventListener("click", () => {
+      try { startRestore(JSON.parse(c.json), "Copia sul dispositivo · " + whenText(c.created_at)); }
+      catch { toast("Questa copia è danneggiata"); }
+    });
+    li.append(grow, btn);
+    ul.append(li);
+  }
+}
+
+$("reminder-seg").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-days]");
+  if (!b) return;
+  state.settingsData.backup_reminder_days = Number(b.dataset.days);
+  saveSettingsData();
+  renderBackupPage();
+  renderBackupBanner();
+});
+
+// ---------- crea backup ----------
+// Su iPhone la finestra Condividi va aperta da un tocco: prima si prepara il file, poi si tocca "Salva".
+$("backup-create").addEventListener("click", async () => {
+  const btn = $("backup-create");
+  btn.disabled = true;
+  btn.textContent = "Preparo il backup…";
+  let backup;
+  try { backup = await buildBackup(); }
+  catch (e) { toast("Backup non riuscito: " + traduciErrore(e.message || "")); return; }
+  finally { btn.disabled = false; btn.textContent = "Crea backup"; }
+  const n = backup.data.transactions.length;
+  const name = `flunora-backup-${isoDate(new Date())}.json`;
+  actionSheet({
+    title: "Backup pronto",
+    message: `${n} ${n === 1 ? "movimento" : "movimenti"} e ${backup.data.categories.length} categorie. Scegli dove salvarlo, ad esempio "Salva su File".`,
+    actions: [{ label: "Salva o condividi…", onClick: async () => {
+      const ok = await deliverFile(name, "application/json", JSON.stringify(backup, null, 1));
+      if (!ok) return;
+      state.settingsData.last_backup_at = backup.created_at;
+      state.settingsData.last_backup_count = n;
+      saveSettingsData();
+      renderBackupPage();
+      renderBackupBanner();
+      $("set-backup").textContent = lastBackupText();
+      toast("Backup salvato");
+    } }],
+  });
+});
+
+// ---------- esporta CSV ----------
+const csvCell = (v) => {
+  const s = String(v ?? "");
+  return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+function buildCsv(rows) {
+  const tipo = { entrata: "Entrata", uscita: "Uscita", investimento: "Investimento" };
+  const lines = ["Data;Tipo;Categoria;Descrizione;Importo"];
+  for (const t of rows) {
+    const [y, m, d] = t.date.split("-");
+    const signed = (t.kind === "entrata" ? 1 : -1) * t.amount_cents;
+    lines.push([`${d}/${m}/${y}`, tipo[t.kind], catById(t.category_id)?.name || "", t.description || "",
+      (signed / 100).toFixed(2).replace(".", ",")].map(csvCell).join(";"));
+  }
+  return "﻿" + lines.join("\r\n");   // il BOM fa leggere bene gli accenti a Excel
+}
+
+$("backup-csv").addEventListener("click", async () => {
+  let all;
+  try { all = await fetchAll("transactions"); }
+  catch (e) { return toast("Esportazione non riuscita: " + traduciErrore(e.message || "")); }
+  if (!all.length) return toast("Non ci sono movimenti da esportare");
+  all.sort((a, b) => a.date.localeCompare(b.date));
+  const years = [...new Set(all.map((t) => t.date.slice(0, 4)))].sort().reverse();
+  const exportRows = (rows, label) => actionSheet({
+    title: "Esportazione pronta",
+    message: `${rows.length} ${rows.length === 1 ? "movimento" : "movimenti"} (${label}).`,
+    actions: [{ label: "Salva o condividi…", onClick: () =>
+      deliverFile(`flunora-movimenti-${label.replace(/\s+/g, "-").toLowerCase()}.csv`, "text/csv", buildCsv(rows)) }],
+  });
+  actionSheet({
+    title: "Esporta movimenti in CSV",
+    message: "Il file si apre con Excel o Numbers.",
+    actions: [
+      { label: "Tutti gli anni", onClick: () => exportRows(all, "tutti gli anni") },
+      ...years.map((y) => ({ label: y, onClick: () => exportRows(all.filter((t) => t.date.startsWith(y)), y) })),
+    ],
+  });
+});
+
+// ---------- ripristino ----------
+$("backup-restore").addEventListener("click", () => { $("restore-file").value = ""; $("restore-file").click(); });
+$("restore-file").addEventListener("change", async () => {
+  const f = $("restore-file").files?.[0];
+  if (!f) return;
+  if (f.size > 50 * 1024 * 1024) return toast("Il file è troppo grande per essere un backup di Flunora");
+  let obj;
+  try { obj = JSON.parse(await f.text()); }
+  catch { return actionSheet({ title: "File non valido", message: "Questo file non è un backup di Flunora.", actions: [] }); }
+  startRestore(obj, f.name);
+});
+
+$("restore-cancel").addEventListener("click", closeRestore);
+$("restore-backdrop").addEventListener("click", closeRestore);
+$("restore-mode").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-mode]");
+  if (b && state.restore) { state.restore.mode = b.dataset.mode; renderRestoreMode(); }
+});
+
+function startRestore(obj, label) {
+  const v = validateBackup(obj);
+  if (!v.ok) return actionSheet({ title: "Impossibile ripristinare", message: v.error, actions: [] });
+  state.restore = { obj, mode: "merge" };
+  const s = v.summary;
+  const mese = (iso) => iso ? new Date(iso + "T12:00").toLocaleDateString("it-IT", { month: "short", year: "numeric" }) : "–";
+  const rows = [
+    ["File", label],
+    ["Creato il", s.created_at ? new Date(s.created_at).toLocaleString("it-IT", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "–"],
+    ["Movimenti", String(s.tx)],
+    ["Categorie", String(s.cat)],
+    ["Periodo", s.from ? `${mese(s.from)} – ${mese(s.to)}` : "Nessun movimento"],
+  ];
+  if (s.version) rows.push(["Versione app", s.version]);
+  $("restore-info").replaceChildren(...rows.map(([k, val]) => {
+    const d = el("div", "kv");
+    d.append(el("span", null, k), el("b", null, val));
+    return d;
+  }));
+  setMsg($("restore-msg"), "");
+  renderRestoreMode();
+  $("restore-sheet").scrollTop = 0;
+  $("restore-sheet").classList.add("open");
+  $("restore-sheet").setAttribute("aria-hidden", "false");
+  $("restore-backdrop").classList.add("open");
+}
+function renderRestoreMode() {
+  const m = state.restore.mode;
+  document.querySelectorAll("#restore-mode .opt").forEach((b) => b.classList.toggle("on", b.dataset.mode === m));
+  $("restore-go").textContent = m === "replace" ? "Sostituisci tutto" : "Unisci";
+  $("restore-go").classList.toggle("danger", m === "replace");
+}
+function closeRestore() {
+  $("restore-sheet").classList.remove("open");
+  $("restore-sheet").setAttribute("aria-hidden", "true");
+  $("restore-backdrop").classList.remove("open");
+  state.restore = null;
+}
+
+$("restore-go").addEventListener("click", () => {
+  if (!state.restore) return;
+  if (state.restore.mode === "replace") {
+    actionSheet({
+      title: "Sostituire tutti i dati?",
+      message: "Movimenti, categorie e budget attuali verranno rimpiazzati da quelli del backup. Prima Flunora salva una copia su questo dispositivo.",
+      actions: [{ label: "Sostituisci tutto", danger: true, onClick: runRestore }],
+    });
+  } else runRestore();
+});
+
+async function runRestore() {
+  const r = state.restore;
+  if (!r) return;
+  const btn = $("restore-go");
+  btn.disabled = true;
+  btn.textContent = "Ripristino in corso…";
+  const msg = $("restore-msg");
+  try {
+    // 1. copia di sicurezza dei dati attuali
+    try { await saveCopy("restore"); }
+    catch { setMsg(msg, "Non riesco a salvare la copia di sicurezza: ripristino annullato.", true); return; }
+    // 2. ripristino in un'unica operazione sul database
+    const d = r.obj.data;
+    const { data: res, error } = await sb.rpc("restore_backup", {
+      payload: { categories: d.categories, transactions: d.transactions, budgets: d.budgets || [] },
+      replace_all: r.mode === "replace",
+    });
+    if (error) {
+      setMsg(msg, /restore_backup|schema cache|PGRST20|42883/i.test(`${error.message} ${error.code}`)
+        ? "Esegui prima lo script 0.3.0 in Supabase." : "Ripristino non riuscito: " + traduciErrore(error.message), true);
+      return;
+    }
+    // 3. impostazioni sincronizzate (sezioni, budget fisso, saldo iniziale, promemoria)
+    const bs = d.settings || {};
+    const keep = { last_backup_at: state.settingsData.last_backup_at, last_backup_count: state.settingsData.last_backup_count };
+    if (r.mode === "replace") {
+      state.settingsData = { ...bs, ...keep };
+    } else {
+      for (const k of ["budget_cents", "opening", "backup_reminder_days"]) {
+        if (state.settingsData[k] == null && bs[k] != null) state.settingsData[k] = bs[k];
+      }
+    }
+    if (r.mode === "replace" && bs.sections) state.sections = normalizeSections(bs.sections);
+    await saveSettingsData();
+    // 4. ricarica tutto
+    closeRestore();
+    $("backup").classList.remove("open");
+    $("settings").classList.remove("open");
+    await loadCategories();
+    renderTabbar();
+    route();
+    const n = res?.transactions_added ?? 0, skip = res?.transactions_skipped ?? 0;
+    toast(r.mode === "replace" ? `Ripristinati ${n} movimenti`
+      : `Aggiunti ${n} movimenti${skip ? `, ${skip} già presenti` : ""}`);
+  } finally {
+    btn.disabled = false;
+    if (state.restore) renderRestoreMode();
+  }
+}
+
+// ---------- promemoria in Dashboard ----------
+$("backup-banner-go").addEventListener("click", () => { openSettings(); openBackup(); });
+$("backup-banner-open").addEventListener("click", () => { openSettings(); openBackup(); });
+$("backup-banner-close").addEventListener("click", () => {
+  lsSet(LS_SNOOZE, String(Date.now() + 3 * 864e5));   // lo ripropone tra 3 giorni
+  $("backup-banner").hidden = true;
+});
+
+async function renderBackupBanner() {
+  const banner = $("backup-banner");
+  const days = reminderDays();
+  const snooze = Number(lsGet(LS_SNOOZE) || 0);
+  if (!days || Date.now() < snooze) { banner.hidden = true; return; }
+  const iso = state.settingsData?.last_backup_at;
+  if (iso) {
+    const n = daysSince(iso);
+    banner.hidden = n < days;
+    $("backup-banner-title").textContent = `Ultimo backup ${n} giorni fa`;
+    return;
+  }
+  // mai fatto: lo suggerisce solo se c'è già qualcosa da salvare
+  const { count } = await sb.from("transactions").select("id", { count: "exact", head: true });
+  banner.hidden = !count;
+  $("backup-banner-title").textContent = "Ancora nessun backup";
+}
 
 init();

@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611092303">
+  <link rel="stylesheet" href="css/style.css?v=202611111140">
 </head>
 <body>
 
@@ -60,6 +60,14 @@
           <button id="year-next" aria-label="Anno successivo">&rsaquo;</button>
         </div>
       </header>
+
+      <!-- promemoria backup (0.3.0) -->
+      <div id="backup-banner" class="backup-banner" hidden>
+        <span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span>
+        <button type="button" id="backup-banner-open" class="t"><b id="backup-banner-title"></b><span>Salva una copia dei tuoi dati</span></button>
+        <button type="button" id="backup-banner-go" class="go">Backup</button>
+        <button type="button" id="backup-banner-close" class="x" aria-label="Ricordamelo più tardi">&times;</button>
+      </div>
 
       <!-- saldo totale (0.2.4) -->
       <button type="button" id="saldo-card" class="card saldo" aria-label="Saldo totale"></button>
@@ -190,8 +198,8 @@
             <span class="label">Saldo iniziale</span><span id="set-opening" class="value"></span><span class="chev">&rsaquo;</span></li>
           <li class="tap" id="open-categories"><span class="ico" style="--c:#ff9500"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span>
             <span class="label">Categorie</span><span class="chev">&rsaquo;</span></li>
-          <li class="soon" data-ver="0.3"><span class="ico" style="--c:#34c759"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span>
-            <span class="label">Backup e ripristino</span><span class="badge">Coming Soon</span></li>
+          <li class="tap" id="open-backup"><span class="ico" style="--c:#34c759"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span>
+            <span class="label">Backup e ripristino</span><span id="set-backup" class="value"></span><span class="chev">&rsaquo;</span></li>
           <li class="soon" data-ver="0.4"><span class="ico" style="--c:#30b0c7"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span>
             <span class="label">Importa estratto conto</span><span class="badge">Coming Soon</span></li>
           <li class="soon" data-ver="0.5"><span class="ico" style="--c:#ff2d55"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg></span>
@@ -308,6 +316,62 @@
       <button type="button" id="whatsnew-ok" class="btn-primary">Continua</button>
     </div>
 
+    <!-- ---------- BACKUP E RIPRISTINO (0.3.0) ---------- -->
+    <div id="backup" class="settings-panel sub-panel" aria-hidden="true">
+      <header class="glass settings-head">
+        <button type="button" id="backup-back" class="link-btn back-btn">&lsaquo; Impostazioni</button>
+        <h2>Backup</h2>
+        <span></span>
+      </header>
+      <div class="settings-body">
+        <div class="card backup-status">
+          <span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span>
+          <h2 id="backup-title">Non hai ancora fatto un backup</h2>
+          <span id="backup-sub" class="secondary"></span>
+          <button type="button" id="backup-create" class="btn-primary">Crea backup</button>
+        </div>
+        <ul class="card list settings">
+          <li class="tap" id="backup-restore"><span class="label accent-text">Ripristina da file…</span></li>
+          <li class="tap" id="backup-csv"><span class="label">Esporta movimenti in CSV</span><span class="chev">&rsaquo;</span></li>
+        </ul>
+        <input type="file" id="restore-file" accept=".json,application/json" hidden>
+
+        <h3 class="section-title">Copie su questo dispositivo</h3>
+        <ul id="copies-list" class="card list settings"></ul>
+        <p class="secondary small foot">Le ultime 3 copie restano dentro l'app su questo dispositivo: una a settimana e una prima di ogni ripristino. Il file di backup resta la protezione principale.</p>
+
+        <h3 class="section-title">Promemoria</h3>
+        <div class="card reminder-card">
+          <span>Ricordami di fare un backup</span>
+          <div class="segmented four" id="reminder-seg">
+            <button type="button" data-days="7">7 giorni</button>
+            <button type="button" data-days="14">14 giorni</button>
+            <button type="button" data-days="30">30 giorni</button>
+            <button type="button" data-days="0">Mai</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- ANTEPRIMA RIPRISTINO ---------- -->
+    <div id="restore-backdrop" class="sheet-backdrop top"></div>
+    <div id="restore-sheet" class="sheet top" aria-hidden="true" role="dialog">
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <button type="button" id="restore-cancel" class="link-btn">Annulla</button>
+        <h2>Ripristina</h2>
+        <span class="head-spacer"></span>
+      </div>
+      <div id="restore-info" class="card kv-card"></div>
+      <div class="choice" id="restore-mode">
+        <button type="button" class="opt" data-mode="merge"><span class="rd"></span><span><b>Unisci</b><small>Aggiunge solo ciò che manca, senza doppioni. Non cancella nulla.</small></span></button>
+        <button type="button" class="opt" data-mode="replace"><span class="rd"></span><span><b>Sostituisci tutto</b><small>I dati attuali vengono rimpiazzati da quelli del backup.</small></span></button>
+      </div>
+      <p class="secondary small foot">Prima del ripristino Flunora salva una copia dei dati attuali su questo dispositivo.</p>
+      <p id="restore-msg" class="msg" role="status"></p>
+      <button type="button" id="restore-go" class="btn-primary">Ripristina</button>
+    </div>
+
     <!-- ---------- EDITOR CATEGORIA (pannello dal basso) ---------- -->
     <div id="cat-backdrop" class="sheet-backdrop top"></div>
     <form id="cat-sheet" class="sheet top" aria-hidden="true" novalidate>
@@ -407,9 +471,9 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611092303"></script>
-  <script src="js/releases.js?v=202611092303"></script>
-  <script src="js/icons.js?v=202611092303"></script>
-  <script src="js/app.js?v=202611092303"></script>
+  <script src="js/config.js?v=202611111140"></script>
+  <script src="js/releases.js?v=202611111140"></script>
+  <script src="js/icons.js?v=202611111140"></script>
+  <script src="js/app.js?v=202611111140"></script>
 </body>
 </html>

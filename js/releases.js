@@ -5,6 +5,18 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.3.0", date: "11 novembre 2026",
+    items: [
+      "Nuovo: fai un backup di tutti i tuoi dati in un file e salvalo dove vuoi (File, iCloud Drive, AirDrop, mail)",
+      "Ripristina un backup vedendo prima cosa contiene: data, movimenti, categorie e periodo",
+      "Scegli se unire il backup ai dati attuali o sostituire tutto",
+      "Prima di ogni ripristino Flunora salva una copia dei tuoi dati, così puoi sempre tornare indietro",
+      "Flunora tiene le ultime 3 copie anche dentro l'app, ripristinabili con un tocco",
+      "Esporta i movimenti in un file CSV da aprire in Excel o Numbers",
+      "Ti ricorda di fare un backup dopo 7, 14 o 30 giorni (o mai, se preferisci)",
+    ],
+  },
+  {
     version: "0.2.4", date: "9 novembre 2026",
     items: [
       "Nuovo: il saldo totale in cima alla Dashboard, cioè quanto hai in tutto oggi",

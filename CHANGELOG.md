@@ -1,5 +1,13 @@
 # Changelog — Flunora
 
+## 0.3.0
+- Backup completo in un file JSON (formato 1): movimenti, categorie anche archiviate, budget fisso e dei singoli mesi, saldo iniziale, sezioni della barra; letto a pagine da 1000 righe, senza id utente; salvato con il menu Condividi di iOS (o scaricato)
+- Ripristino con controllo del file e anteprima (data, movimenti, categorie, periodo, versione); "Unisci" aggiunge solo ciò che manca contando i movimenti identici, "Sostituisci tutto" rimpiazza i dati
+- Ripristino in un'unica operazione sul database: funzione `restore_backup` (script `supabase/migrations/0.3.0_ripristino.sql`, provato su PostgreSQL 16 senza permesso di tabelle temporanee)
+- Copia di sicurezza sul dispositivo (IndexedDB) prima di ogni ripristino e una volta a settimana; si tengono le ultime 3 per utente
+- Esportazione CSV per Excel/Numbers (separatore ";", virgola decimale, BOM UTF-8), di tutti gli anni o di un anno
+- Promemoria backup (7, 14, 30 giorni o mai; predefinito 30) con avviso in Dashboard, rimandabile di 3 giorni
+
 ## 0.2.4
 - Saldo totale in cima alla Dashboard: saldo iniziale + entrate − uscite − investiti dei movimenti dal giorno dopo la data scelta fino a oggi (i movimenti futuri non contano)
 - Saldo iniziale (importo anche zero o negativo + data) dalla carta del saldo o da Impostazioni › Dati; salvato nelle impostazioni sincronizzate, nessuno script Supabase

@@ -700,3 +700,54 @@ button.card.saldo:active { transform: scale(.99); }
 .saldo.empty h2 { font-size: 18px; }
 .saldo.empty .cta { margin-top: 6px; width: 100%; border-radius: 14px; padding: 14px; background: var(--accent); color: #fff; font-weight: 600; }
 button.card.saldo.empty { text-align: center; justify-items: center; }
+
+/* =========================================================
+   0.3.0 — BACKUP E RIPRISTINO
+   ========================================================= */
+.backup-status { display: grid; gap: 4px; justify-items: center; text-align: center; padding: 20px; }
+.backup-status .ic, .backup-banner .ic { display: grid; place-items: center; }
+.backup-status .ic { width: 56px; height: 56px; border-radius: 14px; background: #34c759; margin-bottom: 6px; }
+.backup-status .ic svg, .backup-banner .ic svg { fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.backup-status .ic svg { width: 30px; height: 30px; }
+.backup-status h2 { font-size: 20px; }
+.backup-status .btn-primary { margin-top: 10px; width: 100%; }
+.copy .grow { display: grid; gap: 1px; }
+.copy .t { font-size: 16px; }
+.copy .s { font-size: 13px; color: var(--secondary); }
+.copy .act { border: 0; background: none; color: var(--accent); font-size: 15px; cursor: pointer; padding: 6px 0; }
+.reminder-card { display: grid; gap: 10px; }
+.segmented.four { grid-template-columns: repeat(4, 1fr); }
+
+.kv-card { padding: 4px 16px; }
+.kv { display: flex; justify-content: space-between; gap: 12px; padding: 11px 0; font-size: 15px; }
+.kv + .kv { border-top: .5px solid var(--separator); }
+.kv span { color: var(--secondary); flex: none; }
+.kv b { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
+.choice { display: grid; gap: 10px; }
+.opt {
+  display: flex; gap: 12px; align-items: flex-start; text-align: left; width: 100%;
+  background: var(--card); border-radius: 16px; padding: 14px; border: 2px solid transparent; cursor: pointer;
+}
+.opt.on { border-color: var(--accent); }
+.opt .rd { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--separator); flex: none; margin-top: 1px; }
+.opt.on .rd { border: 7px solid var(--accent); }
+.opt b { display: block; font-size: 16px; }
+.opt small { color: var(--secondary); font-size: 14px; }
+.opt[data-mode="replace"].on { border-color: var(--bad); }
+.opt[data-mode="replace"].on .rd { border-color: var(--bad); }
+.head-spacer { width: 60px; }
+#restore-go.danger { background: var(--bad); }
+
+.backup-banner {
+  display: flex; gap: 10px; align-items: center; border-radius: 16px; padding: 10px 8px 10px 12px;
+  background: color-mix(in srgb, #ff9500 16%, var(--card));
+}
+.backup-banner .ic { width: 36px; height: 36px; border-radius: 10px; background: #ff9500; flex: none; }
+.backup-banner .ic svg { width: 20px; height: 20px; }
+.backup-banner .t { flex: 1; min-width: 0; display: grid; text-align: left; border: 0; background: none; padding: 0; font-size: 14px; color: var(--text); cursor: pointer; }
+.backup-banner .t b { font-size: 15px; }
+.backup-banner .t span { color: var(--secondary); }
+.backup-banner .go { border: 0; background: none; color: #c25e00; font-weight: 600; font-size: 15px; cursor: pointer; padding: 6px; }
+.backup-banner .x { border: 0; background: none; color: var(--secondary); font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 6px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .backup-banner .go { color: #ffb340; } }
+:root[data-theme="dark"] .backup-banner .go { color: #ffb340; }
