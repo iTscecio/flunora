@@ -77,14 +77,53 @@ function refreshPagesAfterImport() {
 // ---------- 1. lettura del PDF sul dispositivo ----------
 let pdfjsPromise = null;
 const PDFJS_BASE = () => new URL("js/vendor/pdfjs/", location.href).href;
+
+// Safari non sa scorrere un ReadableStream con "for await" (Chrome sì): pdf.js lo usa
+// per leggere il testo. Aggiungiamo noi questa capacità (bug #005).
+function polyfillStreams() {
+  const RS = globalThis.ReadableStream;
+  if (!RS || RS.prototype[Symbol.asyncIterator]) return;
+  async function* values() {
+    const reader = this.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        yield value;
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+  Object.defineProperty(RS.prototype, Symbol.asyncIterator, { value: values, writable: true, configurable: true });
+  if (!RS.prototype.values) Object.defineProperty(RS.prototype, "values", { value: values, writable: true, configurable: true });
+}
+
+// il lettore lavora nella pagina (non in un worker separato, dove la correzione sopra non arriva):
+// per un estratto conto di poche pagine è veloce uguale
 function loadPdfJs() {
   if (!pdfjsPromise) {
-    pdfjsPromise = import(PDFJS_BASE() + "pdf.min.mjs").then((lib) => {
-      lib.GlobalWorkerOptions.workerSrc = PDFJS_BASE() + "pdf.worker.min.mjs";
-      return lib;
-    }).catch((e) => { pdfjsPromise = null; e.stage = "caricamento"; throw e; });
+    polyfillStreams();
+    pdfjsPromise = Promise.all([import(PDFJS_BASE() + "pdf.min.mjs"), import(PDFJS_BASE() + "pdf.worker.min.mjs")])
+      .then(([lib, worker]) => {
+        globalThis.pdfjsWorker = worker;
+        lib.GlobalWorkerOptions.workerSrc = PDFJS_BASE() + "pdf.worker.min.mjs";
+        return lib;
+      }).catch((e) => { pdfjsPromise = null; e.stage = "caricamento"; throw e; });
   }
   return pdfjsPromise;
+}
+
+// testo di una pagina letto pezzo per pezzo, senza "for await" (che Safari non ha sugli stream)
+async function pageText(page) {
+  if (!page.streamTextContent) return page.getTextContent();
+  const reader = page.streamTextContent().getReader();
+  const out = { items: [] };
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) return out;
+    out.items.push(...value.items);
+  }
 }
 
 // solo il testo: niente font, immagini, canvas o WebAssembly
@@ -97,7 +136,7 @@ async function extractText(lib, data) {
     const doc = await task.promise;
     const pages = [];
     for (let i = 1; i <= doc.numPages; i++) {
-      const tc = await (await doc.getPage(i)).getTextContent();
+      const tc = await pageText(await doc.getPage(i));
       pages.push(tc.items.filter((it) => it.str && it.str.trim())
         .map((it) => ({ s: it.str, x: it.transform[4], y: it.transform[5] })));
     }
@@ -110,19 +149,7 @@ async function extractText(lib, data) {
 async function readPdf(file) {
   const data = new Uint8Array(await file.arrayBuffer());
   const lib = await loadPdfJs();
-  try {
-    return await extractText(lib, data.slice());
-  } catch (first) {
-    // piano B (Safari): il lettore lavora nella pagina invece che in un worker separato
-    if (/password/i.test(first?.name || "")) throw first;
-    try {
-      if (!globalThis.pdfjsWorker) globalThis.pdfjsWorker = await import(PDFJS_BASE() + "pdf.worker.min.mjs");
-      return await extractText(lib, data.slice());
-    } catch (second) {
-      second.first = first;
-      throw second;
-    }
-  }
+  return extractText(lib, data);
 }
 
 // testo breve dell'errore, da mostrare per capire cosa non va
