@@ -1,5 +1,14 @@
 # Changelog — Flunora
 
+## 0.3.1
+- Barra in basso in stile liquid glass (sfocatura, riflessi, bordo luminoso; tinta più piena in tema scuro) con una "lente" che scivola sulla sezione attiva
+- Transizioni tra le pagine (dissolvenza) e tra mesi/anni (scorrimento a destra o sinistra)
+- Grafico dell'anno che cresce barra per barra, barra Categorie che si disegna, gruppi di movimenti che salgono in sequenza
+- Importi di "Ti restano" e del Saldo totale che scorrono fino al valore (requestAnimationFrame, 600 ms)
+- Movimento appena aggiunto evidenziato; righe eliminate che si chiudono; pannelli con apertura a molla; pulsanti con effetto pressione
+- Zoom disattivato: viewport senza ridimensionamento, touch-action: manipulation, blocco del pizzico su Safari
+- Con "Riduci movimento" attivo tutte le animazioni sono spente
+
 ## 0.3.0
 - Backup completo in un file JSON (formato 1): movimenti, categorie anche archiviate, budget fisso e dei singoli mesi, saldo iniziale, sezioni della barra; letto a pagine da 1000 righe, senza id utente; salvato con il menu Condividi di iOS (o scaricato)
 - Ripristino con controllo del file e anteprima (data, movimenti, categorie, periodo, versione); "Unisci" aggiunge solo ciò che manca contando i movimenti identici, "Sostituisci tutto" rimpiazza i dati
