@@ -2,6 +2,13 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.4.1
+- Carta Categorie (pagina Mesi): pulsante "Dettagli" / "Nascondi" nell'intestazione (`#cat-toggle`, `aria-expanded`); chiusa all'inizio, scelta salvata sul dispositivo (localStorage `flunora.catDetails`)
+- Sotto la barra, legenda compatta (`#cat-dots`) con colore, nome e percentuale di ogni categoria di spesa; un tocco filtra i movimenti come prima
+- Nei dettagli (`#cat-details`) le righe con speso e budget (categorie con budget, poi le altre con importo e percentuale) e "Budget per categoria ›"; la vecchia legenda a due colonne è sostituita dalla legenda compatta
+- Risolto un bug per cui nella pagina Mesi i movimenti con una descrizione lunga uscivano dalla pagina a destra e bisognava scorrere in orizzontale (bug #006). Causa: l'elenco dei giorni (`.tx-days`, `.day`) è una griglia con colonna automatica, che si allargava fino alla descrizione intera su una riga (`white-space: nowrap`). Ora la colonna è `minmax(0, 1fr)`, la descrizione va a capo (anche parole lunghissime) e l'importo non si restringe; `.page` con `overflow-x: clip` come protezione
+- Nessuno script Supabase
+
 ## 0.4.0
 - Import dell'estratto conto PDF della Banca di Piacenza (Impostazioni › Importa estratto conto); script `supabase/migrations/0.4.0_import.sql` (rieseguibile, richiede lo 0.3.3)
 - Lettura del PDF sul dispositivo con pdf.js 6.2.108 (build legacy, Apache 2.0) incluso in `js/vendor/pdfjs/`, caricato solo quando serve; nessun dato del file esce dal telefono tranne i movimenti confermati

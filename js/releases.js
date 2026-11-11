@@ -5,6 +5,15 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.4.1", date: "11 novembre 2026",
+    items: [
+      "Nuovo: nella carta Categorie della pagina Mesi il pulsante \"Dettagli\" mostra o nasconde le spese e i budget di ogni categoria",
+      "Sotto la barra delle categorie c'è una piccola legenda con il colore e la percentuale di ogni categoria; un tocco filtra i movimenti",
+      "Flunora ricorda se tieni i dettagli aperti o chiusi (vale per questo dispositivo)",
+      "Risolto un bug per cui nella pagina Mesi i movimenti con una descrizione lunga uscivano dalla pagina a destra e bisognava scorrere in orizzontale: ora vanno a capo e l'importo resta sempre visibile (bug #006)",
+    ],
+  },
+  {
     version: "0.4.0", date: "11 novembre 2026",
     items: [
       "Nuovo: importa l'estratto conto PDF della Banca di Piacenza, da Impostazioni › Importa estratto conto",

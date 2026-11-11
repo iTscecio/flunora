@@ -1001,3 +1001,45 @@ button:active:not(:disabled), .tap:active, .chip:active, .leg button:active, .op
 .imp-sheet .sheet-head h2 { position: absolute; left: 50%; transform: translateX(-50%); white-space: nowrap; }
 .imp-item .label { flex: 1; }
 .imp-detail { font-size: 12px; color: var(--secondary); background: var(--fill); border-radius: 10px; padding: 10px 12px; text-align: left; word-break: break-word; margin-top: 10px !important; user-select: text; -webkit-user-select: text; }
+
+/* =========================================================
+   0.4.1 — MOVIMENTI CHE VANNO A CAPO (bug #006) · CARTA CATEGORIE
+   ========================================================= */
+/* bug #006: le griglie dei giorni non si allargano più oltre lo schermo */
+.tx-days, .day { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.swipe .row-content { min-width: 0; }
+.swipe .row-content .grow { min-width: 0; }
+.list .swipe .title { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.3; }
+.swipe .row-content .amt, .swipe .row-content .cat-ico, .swipe .row-content .check { flex: none; }
+.page { overflow-x: clip; }
+
+/* intestazione con il pulsante Dettagli / Nascondi */
+.cat-head-r { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cat-toggle {
+  display: inline-flex; align-items: center; gap: 4px; flex: none;
+  border: 0; border-radius: 999px; padding: 5px 10px 5px 12px; background: var(--fill);
+  color: var(--accent); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer;
+}
+.cat-toggle svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; transition: transform .25s cubic-bezier(.2, .8, .2, 1); }
+.cat-toggle.open svg { transform: rotate(180deg); }
+
+/* legenda compatta sotto la barra */
+.stack + .cdots { margin-top: -4px; }
+.cdots { display: flex; flex-wrap: wrap; gap: 2px 4px; margin: 0 -6px; }
+.cdots button {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  border: 0; border-radius: 8px; background: none; color: var(--secondary);
+  font: inherit; font-size: 13px; padding: 5px 6px; cursor: pointer; transition: opacity .2s, background .2s;
+}
+.cdots i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.cdots .nm { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.cdots .p { font-variant-numeric: tabular-nums; }
+.cdots button.on { background: var(--fill); }
+.cdots.filtering button:not(.on) { opacity: .35; }
+
+/* dettagli: spese e budget per categoria */
+.cat-details { margin-top: 10px; padding-top: 6px; border-top: .5px solid var(--separator); }
+.cat-details .bleg:empty { display: none; }
+.cat-details .catbud-link { margin-top: 4px; }
+.cat-details .bleg:empty + .catbud-link { border-top: 0; padding-top: 6px; }
+.cat-details.enter { animation: fl-rise .3s cubic-bezier(.2, .8, .2, 1) both; }

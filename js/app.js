@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.4.0";
+const APP_VERSION = "0.4.1";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -483,14 +483,15 @@ function renderDonut() {
   renderCatBudLink();
 
   $("cat-total").textContent = total ? fmt(total) : "";
-  $("cat-empty").hidden = total > 0 || useBudgets;
-  const stack = $("cat-stack"), leg = $("cat-legend");
+  $("cat-empty").hidden = total > 0;
+  const stack = $("cat-stack"), leg = $("cat-legend"), dots = $("cat-dots");
   stack.hidden = total === 0;
-  leg.hidden = total === 0 && !useBudgets;
-  leg.className = useBudgets ? "bleg" : "leg";
+  dots.hidden = total === 0;
   stack.classList.toggle("filtering", !!state.filterCat);
-  if (state.animateNext) playClass(stack, "animate", 650);
+  dots.classList.toggle("filtering", !!state.filterCat);
   leg.classList.toggle("filtering", !!state.filterCat);
+  if (state.animateNext) playClass(stack, "animate", 650);
+  applyCatDetails();
 
   stack.replaceChildren(...items.map((it) => {
     const s = el("span", it.id === state.filterCat ? "on" : "");
@@ -498,25 +499,48 @@ function renderDonut() {
     s.style.background = it.cat?.color || "#8e8e93";
     return s;
   }));
-  if (useBudgets) {
-    leg.classList.toggle("filtering", !!state.filterCat);
-    const withB = budgeted.map((c) => ({ id: c.id, cat: c, cents: byCat.get(c.id) || 0 }))
-      .sort((a, b) => b.cents / b.cat.budget_cents - a.cents / a.cat.budget_cents || b.cents - a.cents);
-    const noB = items.filter((it) => !(it.cat?.budget_cents > 0));
-    leg.replaceChildren(...withB.map((it) => budgetRow(it)), ...noB.map((it) => budgetRow(it, total)));
-    return;
-  }
-  leg.replaceChildren(...items.map((it) => {
+
+  // 0.4.1: legenda compatta sotto la barra (colore, nome, percentuale); un tocco filtra
+  const pct = (cents) => Math.max(1, Math.round((cents / total) * 100)) + "%";
+  dots.replaceChildren(...items.map((it) => {
     const b = el("button", it.id === state.filterCat ? "on" : "");
     b.type = "button";
     b.setAttribute("aria-pressed", it.id === state.filterCat ? "true" : "false");
-    b.title = fmt(it.cents);
-    b.append(catIcon(it.cat, "sm"), el("span", "name", it.cat?.name || "?"),
-      el("b", null, Math.max(1, Math.round((it.cents / total) * 100)) + "%"));
+    b.setAttribute("aria-label", `${it.cat?.name || "?"}: ${fmt(it.cents)}, ${pct(it.cents)}`);
+    const dot = el("i");
+    dot.style.background = it.cat?.color || "#8e8e93";
+    b.append(dot, el("span", "nm", it.cat?.name || "?"), el("span", "p", pct(it.cents)));
     b.addEventListener("click", () => setFilter(state.filterCat === it.id ? null : it.id));
     return b;
   }));
+
+  // dettagli: prima le categorie con un budget, poi le altre con importo e percentuale
+  const withB = useBudgets ? budgeted.map((c) => ({ id: c.id, cat: c, cents: byCat.get(c.id) || 0 }))
+    .sort((a, b) => b.cents / b.cat.budget_cents - a.cents / a.cat.budget_cents || b.cents - a.cents) : [];
+  const noB = items.filter((it) => !(it.cat?.budget_cents > 0));
+  leg.hidden = withB.length + noB.length === 0;
+  leg.replaceChildren(...withB.map((it) => budgetRow(it)), ...noB.map((it) => budgetRow(it, total)));
 }
+
+// 0.4.1: carta Categorie con i dettagli aperti o chiusi (scelta salvata sul dispositivo)
+let catDetailsMem = null; // se il dispositivo non salva, la scelta vale finché l'app resta aperta
+const catDetailsOpen = () => {
+  if (catDetailsMem !== null) return catDetailsMem;
+  try { return localStorage.getItem("flunora.catDetails") === "1"; } catch { return false; }
+};
+function applyCatDetails() {
+  const open = catDetailsOpen();
+  $("cat-details").hidden = !open;
+  $("cat-toggle").setAttribute("aria-expanded", open ? "true" : "false");
+  $("cat-toggle").classList.toggle("open", open);
+  $("cat-toggle").firstElementChild.textContent = open ? "Nascondi" : "Dettagli";
+}
+$("cat-toggle").addEventListener("click", () => {
+  catDetailsMem = !catDetailsOpen();
+  try { localStorage.setItem("flunora.catDetails", catDetailsMem ? "1" : "0"); } catch {}
+  applyCatDetails();
+  if (catDetailsOpen()) playClass($("cat-details"), "enter", 400);
+});
 
 // una riga della carta Categorie con il budget (o, senza budget, importo e percentuale)
 function budgetRow(it, total = 0) {
