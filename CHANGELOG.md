@@ -2,6 +2,14 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.4.2
+- Carta Categorie, dettagli: accanto a ogni categoria "↑ N% sul solito" (arancione) o "↓ N% sul solito" (verde)
+- "Il solito" = media delle spese per categoria nei 3 mesi precedenti (`USUAL_MONTHS`); contano solo i mesi con almeno una spesa, e si divide per quel numero di mesi
+- Mese in corso: per i mesi precedenti si sommano solo le spese fino allo stesso giorno del mese; mesi passati: mese intero; mesi futuri: nessun confronto
+- Freccia mostrata solo se la media è almeno 1 € e la differenza almeno il 10% e almeno 5 €; nota sotto le righe che spiega il confronto
+- `loadMonth` legge in parallelo le uscite dei 3 mesi precedenti (solo categoria, importo, data); se la lettura fallisce le frecce non compaiono
+- Nessuno script Supabase
+
 ## 0.4.1
 - Carta Categorie (pagina Mesi): pulsante "Dettagli" / "Nascondi" nell'intestazione (`#cat-toggle`, `aria-expanded`); chiusa all'inizio, scelta salvata sul dispositivo (localStorage `flunora.catDetails`)
 - Sotto la barra, legenda compatta (`#cat-dots`) con colore, nome e percentuale di ogni categoria di spesa; un tocco filtra i movimenti come prima

@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.4.1";
+const APP_VERSION = "0.4.2";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -381,14 +381,18 @@ async function loadMonth() {
     clearSearch();
   }
   $("month-label").textContent = `${MESI[state.month.getMonth()]} ${state.month.getFullYear()}`;
-  const [txRes, bRes] = await Promise.all([
+  const [txRes, bRes, hRes] = await Promise.all([
     sb.from("transactions").select("*")
       .gte("date", isoDate(state.month)).lt("date", isoDate(addMonths(state.month, 1)))
       .order("date", { ascending: false }).order("created_at", { ascending: false }),
     sb.from("budgets").select("amount_cents").eq("month", isoDate(state.month)).maybeSingle(),
+    // 0.4.2: spese dei 3 mesi precedenti, per il confronto con il solito
+    sb.from("transactions").select("category_id,amount_cents,date").eq("kind", "uscita")
+      .gte("date", isoDate(addMonths(state.month, -USUAL_MONTHS))).lt("date", isoDate(state.month)),
   ]);
   if (txRes.error) { toast("Errore movimenti: " + txRes.error.message); return; }
   if (shown !== state.month.getTime()) return; // mese cambiato nel frattempo
+  state.history = hRes.error ? [] : hRes.data || [];
   state.transactions = txRes.data;
   state.budgetMonth = bRes.error ? null : (bRes.data?.amount_cents ?? null);
   state.budgetTableMissing = !!bRes.error;
@@ -519,7 +523,15 @@ function renderDonut() {
     .sort((a, b) => b.cents / b.cat.budget_cents - a.cents / a.cat.budget_cents || b.cents - a.cents) : [];
   const noB = items.filter((it) => !(it.cat?.budget_cents > 0));
   leg.hidden = withB.length + noB.length === 0;
-  leg.replaceChildren(...withB.map((it) => budgetRow(it)), ...noB.map((it) => budgetRow(it, total)));
+  const usual = usualByCategory();
+  leg.replaceChildren(...withB.map((it) => budgetRow(it, 0, usual)), ...noB.map((it) => budgetRow(it, total, usual)));
+  // 0.4.2: spiegazione del confronto, solo se c'è almeno una freccia
+  const note = $("cat-usual-note");
+  note.hidden = !leg.querySelector(".cmp");
+  if (usual) {
+    const n = usual.months === 1 ? "del mese precedente" : `dei ${usual.months} mesi precedenti`;
+    note.textContent = `Il solito: media ${n}` + (usual.partial ? ", fino allo stesso giorno del mese" : "");
+  }
 }
 
 // 0.4.1: carta Categorie con i dettagli aperti o chiusi (scelta salvata sul dispositivo)
@@ -542,8 +554,43 @@ $("cat-toggle").addEventListener("click", () => {
   if (catDetailsOpen()) playClass($("cat-details"), "enter", 400);
 });
 
+// 0.4.2: "il solito" = media delle spese per categoria nei 3 mesi precedenti.
+// Nel mese in corso si confronta fino allo stesso giorno del mese, così all'inizio
+// del mese non sembra sempre di spendere meno. Contano solo i mesi con almeno una spesa.
+const USUAL_MONTHS = 3;
+function usualByCategory() {
+  const status = monthStatus(state.month);
+  if (status > 0 || !state.history?.length) return null;
+  const cutoff = status === 0 ? new Date().getDate() : 31;
+  const months = new Set(), sums = new Map();
+  for (const t of state.history) {
+    months.add(t.date.slice(0, 7));
+    if (Number(t.date.slice(8, 10)) > cutoff) continue;
+    sums.set(t.category_id, (sums.get(t.category_id) || 0) + t.amount_cents);
+  }
+  if (!months.size) return null;
+  const avg = new Map();
+  for (const [id, cents] of sums) avg.set(id, cents / months.size);
+  return { avg, months: months.size, partial: status === 0 };
+}
+
+// freccia rispetto al solito, solo se la differenza conta (almeno 10% e 5 €)
+function usualCompare(it, usual) {
+  if (!usual) return null;
+  const avg = usual.avg.get(it.id) || 0;
+  if (avg < 100) return null;
+  const diff = it.cents - avg;
+  if (Math.abs(diff) < Math.max(avg * 0.1, 500)) return null;
+  const pct = Math.round((Math.abs(diff) / avg) * 100);
+  const up = diff > 0;
+  const s = el("span", "cmp " + (up ? "up" : "down"));
+  s.append(el("span", "sep", "· "), `${up ? "↑" : "↓"} ${pct}% sul solito`);
+  s.dataset.label = `${up ? "più" : "meno"} del solito del ${pct}%`;
+  return s;
+}
+
 // una riga della carta Categorie con il budget (o, senza budget, importo e percentuale)
-function budgetRow(it, total = 0) {
+function budgetRow(it, total = 0, usual = null) {
   const bud = it.cat?.budget_cents > 0 ? it.cat.budget_cents : 0;
   const k = bud ? it.cents / bud : 0;
   const level = !bud ? "nob" : k > 1 ? "over" : k >= 0.8 ? "warn" : "ok";
@@ -563,10 +610,16 @@ function budgetRow(it, total = 0) {
       : k === 1 ? "Budget esaurito"
       : k >= 0.8 ? "Quasi finito · restano " + fmt(bud - it.cents)
       : "Restano " + fmt(bud - it.cents);
-    b.append(bar, el("span", "st", st));
-    b.setAttribute("aria-label", `${it.cat.name}: ${fmt(it.cents)} di ${fmt(bud)}. ${st}`);
+    const stEl = el("span", "st", st);
+    const cmp = usualCompare(it, usual);
+    if (cmp) stEl.append(" ", cmp);
+    b.append(bar, stEl);
+    b.setAttribute("aria-label", `${it.cat.name}: ${fmt(it.cents)} di ${fmt(bud)}. ${st}` + (cmp ? `. ${cmp.dataset.label}` : ""));
   } else {
-    b.append(el("span", "st", "Nessun budget"));
+    const stEl = el("span", "st", "Nessun budget");
+    const cmp = usualCompare(it, usual);
+    if (cmp) stEl.append(" ", cmp);
+    b.append(stEl);
   }
   b.addEventListener("click", () => setFilter(state.filterCat === it.id ? null : it.id));
   return b;

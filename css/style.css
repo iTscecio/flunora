@@ -1043,3 +1043,15 @@ button:active:not(:disabled), .tap:active, .chip:active, .leg button:active, .op
 .cat-details .catbud-link { margin-top: 4px; }
 .cat-details .bleg:empty + .catbud-link { border-top: 0; padding-top: 6px; }
 .cat-details.enter { animation: fl-rise .3s cubic-bezier(.2, .8, .2, 1) both; }
+
+/* =========================================================
+   0.4.2 — CONFRONTO CON IL SOLITO (carta Categorie)
+   ========================================================= */
+.brow .st .cmp { font-weight: 600; white-space: nowrap; }
+.brow .st .cmp.up { color: var(--out); }
+.brow .st .cmp.down { color: var(--good); }
+.cat-usual-note { font-size: 12px; color: var(--secondary); margin: 6px 0 0; }
+.brow .st .cmp .sep { color: var(--secondary); font-weight: 400; }
+.brow .st:has(.cmp) { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 8px; }
+.brow .st .cmp { margin-left: auto; }
+.brow .st .cmp .sep { display: none; }

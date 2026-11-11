@@ -5,6 +5,14 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.4.2", date: "11 novembre 2026",
+    items: [
+      "Nuovo: nei dettagli della carta Categorie una freccia ti dice se in una categoria stai spendendo più o meno del solito",
+      "Il solito è la media dei 3 mesi precedenti; nel mese in corso il confronto è fino allo stesso giorno del mese, così all'inizio del mese non sembra sempre di spendere meno",
+      "La freccia compare solo quando la differenza conta (almeno il 10% e 5 €)",
+    ],
+  },
+  {
     version: "0.4.1", date: "11 novembre 2026",
     items: [
       "Nuovo: nella carta Categorie della pagina Mesi il pulsante \"Dettagli\" mostra o nasconde le spese e i budget di ogni categoria",
