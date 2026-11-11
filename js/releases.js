@@ -14,6 +14,7 @@ window.RELEASES = [
       "Flunora tiene le ultime 3 copie anche dentro l'app, ripristinabili con un tocco",
       "Esporta i movimenti in un file CSV da aprire in Excel o Numbers",
       "Ti ricorda di fare un backup dopo 7, 14 o 30 giorni (o mai, se preferisci)",
+      "Scorrendo verso il basso la barra si nasconde e non copre più i movimenti; torna scorrendo verso l'alto",
     ],
   },
   {

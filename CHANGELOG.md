@@ -7,6 +7,7 @@
 - Copia di sicurezza sul dispositivo (IndexedDB) prima di ogni ripristino e una volta a settimana; si tengono le ultime 3 per utente
 - Esportazione CSV per Excel/Numbers (separatore ";", virgola decimale, BOM UTF-8), di tutti gli anni o di un anno
 - Promemoria backup (7, 14, 30 giorni o mai; predefinito 30) con avviso in Dashboard, rimandabile di 3 giorni
+- Correzione: la barra in basso copriva gli ultimi movimenti; ora si nasconde scorrendo verso il basso e torna scorrendo verso l'alto, e c'è più spazio in fondo alle pagine
 
 ## 0.2.4
 - Saldo totale in cima alla Dashboard: saldo iniziale + entrate − uscite − investiti dei movimenti dal giorno dopo la data scelta fino a oggi (i movimenti futuri non contano)

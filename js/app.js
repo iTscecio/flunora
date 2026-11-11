@@ -722,6 +722,7 @@ async function deleteTransactions(txs) {
 //  PANNELLO DAL BASSO: nuovo / modifica movimento
 // =========================================================
 $("btn-add").addEventListener("click", () => openSheet(null));
+$("sheet-cancel").addEventListener("click", () => showBar());
 $("sheet-cancel").addEventListener("click", closeSheet);
 $("sheet-backdrop").addEventListener("click", closeSheet);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
@@ -2232,5 +2233,20 @@ async function renderBackupBanner() {
   banner.hidden = !count;
   $("backup-banner-title").textContent = "Ancora nessun backup";
 }
+
+// =========================================================
+//  BARRA IN BASSO CHE SI NASCONDE SCORRENDO (0.3.0)
+//  Giù: la barra scende e libera lo schermo. Su (o in cima alla pagina): torna.
+// =========================================================
+let lastScrollY = window.scrollY;
+window.addEventListener("scroll", () => {
+  const y = Math.max(0, window.scrollY);
+  const dy = y - lastScrollY;
+  if (Math.abs(dy) < 6) return;
+  document.body.classList.toggle("bar-hidden", dy > 0 && y > 60);
+  lastScrollY = y;
+}, { passive: true });
+const showBar = () => { document.body.classList.remove("bar-hidden"); lastScrollY = window.scrollY; };
+window.addEventListener("hashchange", showBar);
 
 init();

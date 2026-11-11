@@ -751,3 +751,9 @@ button.card.saldo.empty { text-align: center; justify-items: center; }
 .backup-banner .x { border: 0; background: none; color: var(--secondary); font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 6px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .backup-banner .go { color: #ffb340; } }
 :root[data-theme="dark"] .backup-banner .go { color: #ffb340; }
+
+/* 0.3.0 — la barra in basso si nasconde scorrendo verso il basso e torna scorrendo verso l'alto */
+.page { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 64px); }
+.tabbar, .gear { transition: transform .32s cubic-bezier(.2, .8, .2, 1), opacity .25s; }
+body.bar-hidden .tabbar { transform: translate(-50%, calc(100% + 40px + env(safe-area-inset-bottom))); }
+@media (prefers-reduced-motion: reduce) { .tabbar, .gear { transition: none; } }
