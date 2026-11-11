@@ -16,6 +16,7 @@ window.RELEASES = [
       "Gli spostamenti tra i tuoi conti non contano come spese né entrate",
       "Commissioni e bolli finiscono nella nuova categoria \"Commissioni\"",
       "Puoi annullare un'importazione intera, anche giorni dopo",
+      "Risolto un bug per cui su iPhone l'estratto conto non veniva letto (\"Non riesco a leggere il file\") (bug #005)",
     ],
   },
   {

@@ -76,30 +76,61 @@ function refreshPagesAfterImport() {
 
 // ---------- 1. lettura del PDF sul dispositivo ----------
 let pdfjsPromise = null;
+const PDFJS_BASE = () => new URL("js/vendor/pdfjs/", location.href).href;
 function loadPdfJs() {
   if (!pdfjsPromise) {
-    const base = new URL("js/vendor/pdfjs/", location.href).href;
-    pdfjsPromise = import(base + "pdf.min.mjs").then((lib) => {
-      lib.GlobalWorkerOptions.workerSrc = base + "pdf.worker.min.mjs";
+    pdfjsPromise = import(PDFJS_BASE() + "pdf.min.mjs").then((lib) => {
+      lib.GlobalWorkerOptions.workerSrc = PDFJS_BASE() + "pdf.worker.min.mjs";
       return lib;
-    }).catch((e) => { pdfjsPromise = null; throw e; });
+    }).catch((e) => { pdfjsPromise = null; e.stage = "caricamento"; throw e; });
   }
   return pdfjsPromise;
 }
 
-async function readPdf(file) {
-  const lib = await loadPdfJs();
-  const task = lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false });
-  const doc = await task.promise;
-  const pages = [];
-  for (let i = 1; i <= doc.numPages; i++) {
-    const tc = await (await doc.getPage(i)).getTextContent();
-    pages.push(tc.items.filter((it) => it.str && it.str.trim())
-      .map((it) => ({ s: it.str, x: it.transform[4], y: it.transform[5] })));
+// solo il testo: niente font, immagini, canvas o WebAssembly
+async function extractText(lib, data) {
+  const task = lib.getDocument({
+    data, isEvalSupported: false, disableFontFace: true, useSystemFonts: false, enableXfa: false,
+    isOffscreenCanvasSupported: false, isImageDecoderSupported: false, useWasm: false, stopAtErrors: false,
+  });
+  try {
+    const doc = await task.promise;
+    const pages = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      const tc = await (await doc.getPage(i)).getTextContent();
+      pages.push(tc.items.filter((it) => it.str && it.str.trim())
+        .map((it) => ({ s: it.str, x: it.transform[4], y: it.transform[5] })));
+    }
+    return pages;
+  } finally {
+    try { await task.destroy(); } catch { /* niente */ }
   }
-  try { await task.destroy(); } catch { /* niente */ }
-  return pages;
 }
+
+async function readPdf(file) {
+  const data = new Uint8Array(await file.arrayBuffer());
+  const lib = await loadPdfJs();
+  try {
+    return await extractText(lib, data.slice());
+  } catch (first) {
+    // piano B (Safari): il lettore lavora nella pagina invece che in un worker separato
+    if (/password/i.test(first?.name || "")) throw first;
+    try {
+      if (!globalThis.pdfjsWorker) globalThis.pdfjsWorker = await import(PDFJS_BASE() + "pdf.worker.min.mjs");
+      return await extractText(lib, data.slice());
+    } catch (second) {
+      second.first = first;
+      throw second;
+    }
+  }
+}
+
+// testo breve dell'errore, da mostrare per capire cosa non va
+const errDetail = (e) => {
+  const one = (x) => x ? `${x.name || "Errore"}: ${String(x.message || x).slice(0, 160)}` : "";
+  return [e?.stage ? `[${e.stage}]` : "", one(e), e?.first && e.first !== e ? "· prima: " + one(e.first) : ""]
+    .filter(Boolean).join(" ") + ` · ${navigator.userAgent.match(/OS [\d_]+|Version\/[\d.]+|Chrome\/\d+/g)?.join(" ") || ""}`;
+};
 
 $("import-file").addEventListener("change", async (e) => {
   const file = e.target.files[0];
@@ -117,7 +148,12 @@ $("import-file").addEventListener("change", async (e) => {
       : ["Connessione non riuscita", "Riprova tra poco. Non è stato importato nulla."]);
     let pages;
     try { pages = await readPdf(file); }
-    catch { return impStop(["Non riesco a leggere il file", "Assicurati che sia il PDF dell'estratto conto, non una foto o un file protetto. Non è stato importato nulla."]); }
+    catch (err) {
+      if (/password/i.test(err?.name || "")) return impStop(["Il PDF è protetto da password", "Scarica di nuovo l'estratto conto senza password e riprova. Non è stato importato nulla."]);
+      return impStop(err?.stage === "caricamento"
+        ? ["Non riesco ad aprire il lettore di PDF", "Controlla la connessione e riprova. Non è stato importato nulla."]
+        : ["Non riesco a leggere il file", "Assicurati che sia il PDF dell'estratto conto, non una foto. Non è stato importato nulla."], errDetail(err));
+    }
     const res = FlunoraBDP.parse(pages);
     if (res.problems.includes("not_bdp")) return impStop(["Estratto conto non riconosciuto", "Per ora Flunora legge solo l'estratto conto PDF della Banca di Piacenza. Non è stato importato nulla."]);
     if (!res.rows.length) return impStop(["Nessun movimento trovato", "Il file non contiene movimenti da importare."]);
@@ -126,7 +162,7 @@ $("import-file").addEventListener("change", async (e) => {
     await buildItems(res);
     renderCheck();
   } catch (err) {
-    impStop(["Qualcosa è andato storto", "Non è stato importato nulla. " + traduciErrore(err?.message || "")]);
+    impStop(["Qualcosa è andato storto", "Non è stato importato nulla. " + traduciErrore(err?.message || "")], errDetail(err));
   } finally {
     imp.busy = false;
   }
@@ -233,12 +269,13 @@ function impLoading(text) {
   $("imp-body").replaceChildren(box);
 }
 
-function impStop([title, text]) {
+function impStop([title, text], detail = "") {
   $("imp-title").textContent = "Importazione";
   const box = el("div", "imp-stop");
   const ic = el("span", "imp-big bad");
   ic.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 7v6M12 17h.01"/></svg>';
   box.append(ic, el("h2", null, title), el("p", "secondary", text));
+  if (detail) box.append(el("p", "imp-detail", "Dettaglio tecnico (mandamelo con uno screenshot): " + detail));
   $("imp-body").replaceChildren(box);
   $("imp-foot").hidden = true;
 }
