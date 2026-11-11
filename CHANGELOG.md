@@ -10,6 +10,7 @@
 - Con "Riduci movimento" attivo tutte le animazioni sono spente
 - Bug #002: il rimbalzo di iOS in fondo alla pagina faceva ricomparire la barra; ora lo scorrimento è limitato tra 0 e il fondo della pagina
 - Bug #003: toccando un movimento lo sfondo grigio trasparente lasciava vedere il rosso di "Elimina" e la riga non arrivava al bordo sinistro; ora sfondo pieno e riga a tutta larghezza
+- Bug #004: eliminare un movimento andava a scatti (attesa del server a riga ferma, poi chiusura, poi ridisegno, con la barra che reagiva all'accorciarsi della pagina). Ora l'animazione parte subito in parallelo con il server: la riga scivola via (transform), poi lo spazio si richiude; un giorno rimasto vuoto si richiude con la sua intestazione; la barra resta ferma durante la chiusura
 
 ## 0.3.0
 - Backup completo in un file JSON (formato 1): movimenti, categorie anche archiviate, budget fisso e dei singoli mesi, saldo iniziale, sezioni della barra; letto a pagine da 1000 righe, senza id utente; salvato con il menu Condividi di iOS (o scaricato)

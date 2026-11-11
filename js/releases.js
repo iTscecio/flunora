@@ -15,6 +15,7 @@ window.RELEASES = [
       "Se sull'iPhone è attivo \"Riduci movimento\", Flunora resta ferma e veloce",
       "Corretto: arrivando in fondo alla pagina la barra non ricompare più per il rimbalzo",
       "Corretto: toccando un movimento la riga si colora tutta, senza il rosso di \"Elimina\" sotto",
+      "Eliminare un movimento ora è fluido: la riga scivola via subito e lo spazio si richiude senza scatti",
     ],
   },
   {

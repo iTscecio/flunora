@@ -33,6 +33,7 @@ const state = {
   budgetEdit: null,                  // pannello budget aperto
   slideDir: null,                    // 0.3.1: direzione dell'animazione al cambio mese
   animateNext: false,                // 0.3.1: anima il prossimo disegno di grafici ed elenco
+  freezeBar: false,                  // 0.3.1: barra ferma mentre una riga eliminata si richiude
   prevIds: null,                     // 0.3.1: movimenti prima di un salvataggio (per evidenziare il nuovo)
   restore: null,                     // ripristino in preparazione { obj, mode }
 };
@@ -721,13 +722,16 @@ $("btn-delete-selected").addEventListener("click", async () => {
 // ---------- eliminazione con "Annulla" ----------
 async function deleteTransactions(txs) {
   const ids = txs.map((t) => t.id);
-  const { error } = await sb.from("transactions").delete().in("id", ids);
+  // l'animazione parte subito, mentre il server elimina: niente attesa a riga ferma
+  const [{ error }] = await Promise.all([
+    sb.from("transactions").delete().in("id", ids),
+    collapseRows(ids),
+  ]);
   if (error) {
     toast("Eliminazione non riuscita: " + traduciErrore(error.message));
     renderList();
     return false;
   }
-  await collapseRows(ids);
   state.transactions = state.transactions.filter((t) => !ids.includes(t.id));
   renderKpis(); renderDonut(); renderList();
 
@@ -2282,6 +2286,7 @@ async function renderBackupBanner() {
 // =========================================================
 let lastScrollY = window.scrollY;
 window.addEventListener("scroll", () => {
+  if (state.freezeBar) return;     // durante l'eliminazione di una riga la pagina si accorcia: non è uno scorrimento
   // il "rimbalzo" di iOS in cima e in fondo non conta come scorrimento (bug #002)
   const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
   const y = Math.min(Math.max(0, window.scrollY), max);
@@ -2323,15 +2328,43 @@ function countTo(node, target, render, ms = 600) {
   node._raf = requestAnimationFrame(step);
 }
 
-// richiude le righe eliminate prima di toglierle dall'elenco
+// eliminazione fluida: la riga scivola via a sinistra, poi lo spazio si richiude.
+// Se il giorno resta vuoto si richiude anche la sua intestazione. Solo transform/opacity
+// per lo scivolamento; durante la chiusura la barra in basso resta ferma.
 function collapseRows(ids) {
   if (reduceMotion()) return Promise.resolve();
   const rows = ids.map((id) => document.querySelector(`#tx-list li[data-id="${CSS.escape(id)}"]`)).filter(Boolean);
   if (!rows.length) return Promise.resolve();
-  rows.forEach((li) => { li.style.height = li.offsetHeight + "px"; });
-  void document.body.offsetWidth;
-  rows.forEach((li) => li.classList.add("collapsing"));
-  return new Promise((r) => setTimeout(r, 260));
+  const gone = new Set(rows);
+  const targets = [];
+  for (const day of new Set(rows.map((li) => li.closest(".day")))) {
+    const lis = [...day.querySelectorAll("li.swipe")];
+    if (lis.every((li) => gone.has(li))) targets.push(day);
+    else targets.push(...lis.filter((li) => gone.has(li)));
+  }
+  state.freezeBar = true;
+  // 1. scivola via
+  rows.forEach((li) => {
+    const c = li.querySelector(".row-content");
+    c.style.transition = "transform .2s cubic-bezier(.4, 0, 1, 1)";
+    c.style.transform = "translateX(-100%)";
+  });
+  return new Promise((done) => setTimeout(() => {
+    // 2. lo spazio si richiude
+    targets.forEach((n) => {
+      n.style.height = n.offsetHeight + "px";
+      if (n.classList.contains("day") && n.parentElement.children.length > 1) {
+        n.dataset.gap = n.nextElementSibling ? "after" : "before"; // assorbe lo spazio tra i giorni
+      }
+    });
+    void document.body.offsetHeight;
+    targets.forEach((n) => n.classList.add("collapsing"));
+    setTimeout(() => {
+      state.freezeBar = false;
+      lastScrollY = window.scrollY;
+      done();
+    }, 250);
+  }, 190));
 }
 
 // niente zoom con due dita (Safari) — resta lo Zoom di sistema in Accessibilità
