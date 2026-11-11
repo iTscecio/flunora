@@ -1,5 +1,7 @@
 # Changelog — Flunora
 
+I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
+
 ## 0.3.1
 - Barra in basso in stile liquid glass (sfocatura, riflessi, bordo luminoso; tinta più piena in tema scuro) con una "lente" che scivola sulla sezione attiva
 - Transizioni tra le pagine (dissolvenza) e tra mesi/anni (scorrimento a destra o sinistra)
@@ -8,9 +10,9 @@
 - Movimento appena aggiunto evidenziato; righe eliminate che si chiudono; pannelli con apertura a molla; pulsanti con effetto pressione
 - Zoom disattivato: viewport senza ridimensionamento, touch-action: manipulation, blocco del pizzico su Safari
 - Con "Riduci movimento" attivo tutte le animazioni sono spente
-- Bug #002: il rimbalzo di iOS in fondo alla pagina faceva ricomparire la barra; ora lo scorrimento è limitato tra 0 e il fondo della pagina
-- Bug #003: toccando un movimento lo sfondo grigio trasparente lasciava vedere il rosso di "Elimina" e la riga non arrivava al bordo sinistro; ora sfondo pieno e riga a tutta larghezza
-- Bug #004: eliminare un movimento andava a scatti (attesa del server a riga ferma, poi chiusura, poi ridisegno, con la barra che reagiva all'accorciarsi della pagina). Ora l'animazione parte subito in parallelo con il server: la riga scivola via (transform), poi lo spazio si richiude; un giorno rimasto vuoto si richiude con la sua intestazione; la barra resta ferma durante la chiusura
+- Risolto un bug per cui, arrivando in fondo alla pagina, il rimbalzo di iOS faceva ricomparire la barra (bug #002). Lo scorrimento ora è limitato tra 0 e il fondo della pagina
+- Risolto un bug per cui, toccando un movimento, lo sfondo grigio trasparente lasciava vedere il rosso di "Elimina" e la riga non arrivava al bordo sinistro (bug #003). Ora sfondo pieno e riga a tutta larghezza
+- Risolto un bug per cui eliminare un movimento andava a scatti (bug #004): attesa del server a riga ferma, poi chiusura, poi ridisegno, con la barra che reagiva all'accorciarsi della pagina. Ora l'animazione parte subito in parallelo con il server: la riga scivola via (transform), poi lo spazio si richiude; un giorno rimasto vuoto si richiude con la sua intestazione; la barra resta ferma durante la chiusura
 
 ## 0.3.0
 - Backup completo in un file JSON (formato 1): movimenti, categorie anche archiviate, budget fisso e dei singoli mesi, saldo iniziale, sezioni della barra; letto a pagine da 1000 righe, senza id utente; salvato con il menu Condividi di iOS (o scaricato)
@@ -19,7 +21,7 @@
 - Copia di sicurezza sul dispositivo (IndexedDB) prima di ogni ripristino e una volta a settimana; si tengono le ultime 3 per utente
 - Esportazione CSV per Excel/Numbers (separatore ";", virgola decimale, BOM UTF-8), di tutti gli anni o di un anno
 - Promemoria backup (7, 14, 30 giorni o mai; predefinito 30) con avviso in Dashboard, rimandabile di 3 giorni
-- Correzione: la barra in basso copriva gli ultimi movimenti; ora si nasconde scorrendo verso il basso e torna scorrendo verso l'alto, e c'è più spazio in fondo alle pagine
+- Risolto un bug per cui la barra in basso copriva gli ultimi movimenti (bug #001). Ora si nasconde scorrendo verso il basso e torna scorrendo verso l'alto, e c'è più spazio in fondo alle pagine
 
 ## 0.2.4
 - Saldo totale in cima alla Dashboard: saldo iniziale + entrate − uscite − investiti dei movimenti dal giorno dopo la data scelta fino a oggi (i movimenti futuri non contano)

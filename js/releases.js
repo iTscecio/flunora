@@ -13,9 +13,9 @@ window.RELEASES = [
       "Pannelli, avvisi e pulsanti rispondono al tocco in modo più morbido",
       "Lo zoom non si attiva più per sbaglio con il doppio tocco o con due dita",
       "Se sull'iPhone è attivo \"Riduci movimento\", Flunora resta ferma e veloce",
-      "Corretto: arrivando in fondo alla pagina la barra non ricompare più per il rimbalzo",
-      "Corretto: toccando un movimento la riga si colora tutta, senza il rosso di \"Elimina\" sotto",
-      "Eliminare un movimento ora è fluido: la riga scivola via subito e lo spazio si richiude senza scatti",
+      "Risolto un bug per cui, arrivando in fondo alla pagina, la barra in basso ricompariva per il rimbalzo (bug #002)",
+      "Risolto un bug per cui, toccando un movimento, la riga si colorava di rosso con la scritta \"Elimina\" sopra l'importo e lasciava una striscia vuota a sinistra (bug #003)",
+      "Risolto un bug per cui eliminare un movimento andava a scatti: ora la riga scivola via subito e lo spazio si richiude in modo fluido (bug #004)",
     ],
   },
   {
@@ -28,7 +28,7 @@ window.RELEASES = [
       "Flunora tiene le ultime 3 copie anche dentro l'app, ripristinabili con un tocco",
       "Esporta i movimenti in un file CSV da aprire in Excel o Numbers",
       "Ti ricorda di fare un backup dopo 7, 14 o 30 giorni (o mai, se preferisci)",
-      "Scorrendo verso il basso la barra si nasconde e non copre più i movimenti; torna scorrendo verso l'alto",
+      "Risolto un bug per cui la barra in basso copriva gli ultimi movimenti: ora si nasconde scorrendo verso il basso e torna scorrendo verso l'alto (bug #001)",
     ],
   },
   {
