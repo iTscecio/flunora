@@ -8,6 +8,8 @@
 - Movimento appena aggiunto evidenziato; righe eliminate che si chiudono; pannelli con apertura a molla; pulsanti con effetto pressione
 - Zoom disattivato: viewport senza ridimensionamento, touch-action: manipulation, blocco del pizzico su Safari
 - Con "Riduci movimento" attivo tutte le animazioni sono spente
+- Bug #002: il rimbalzo di iOS in fondo alla pagina faceva ricomparire la barra; ora lo scorrimento è limitato tra 0 e il fondo della pagina
+- Bug #003: toccando un movimento lo sfondo grigio trasparente lasciava vedere il rosso di "Elimina" e la riga non arrivava al bordo sinistro; ora sfondo pieno e riga a tutta larghezza
 
 ## 0.3.0
 - Backup completo in un file JSON (formato 1): movimenti, categorie anche archiviate, budget fisso e dei singoli mesi, saldo iniziale, sezioni della barra; letto a pagine da 1000 righe, senza id utente; salvato con il menu Condividi di iOS (o scaricato)

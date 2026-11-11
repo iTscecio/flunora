@@ -13,6 +13,8 @@ window.RELEASES = [
       "Pannelli, avvisi e pulsanti rispondono al tocco in modo più morbido",
       "Lo zoom non si attiva più per sbaglio con il doppio tocco o con due dita",
       "Se sull'iPhone è attivo \"Riduci movimento\", Flunora resta ferma e veloce",
+      "Corretto: arrivando in fondo alla pagina la barra non ricompare più per il rimbalzo",
+      "Corretto: toccando un movimento la riga si colora tutta, senza il rosso di \"Elimina\" sotto",
     ],
   },
   {

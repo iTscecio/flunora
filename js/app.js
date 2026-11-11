@@ -2282,7 +2282,9 @@ async function renderBackupBanner() {
 // =========================================================
 let lastScrollY = window.scrollY;
 window.addEventListener("scroll", () => {
-  const y = Math.max(0, window.scrollY);
+  // il "rimbalzo" di iOS in cima e in fondo non conta come scorrimento (bug #002)
+  const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+  const y = Math.min(Math.max(0, window.scrollY), max);
   const dy = y - lastScrollY;
   if (Math.abs(dy) < 6) return;
   document.body.classList.toggle("bar-hidden", dy > 0 && y > 60);
