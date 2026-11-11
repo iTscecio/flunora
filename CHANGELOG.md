@@ -2,7 +2,17 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
-## 0.3.3
+## 0.4.0
+- Import dell'estratto conto PDF della Banca di Piacenza (Impostazioni › Importa estratto conto); script `supabase/migrations/0.4.0_import.sql` (rieseguibile, richiede lo 0.3.3)
+- Lettura del PDF sul dispositivo con pdf.js 6.2.108 (build legacy, Apache 2.0) incluso in `js/vendor/pdfjs/`, caricato solo quando serve; nessun dato del file esce dal telefono tranne i movimenti confermati
+- `js/bank-bdp.js`: ricostruzione delle righe dalle posizioni del testo (data, valuta, descrizione, importo con "-" per le uscite, dettaglio su più righe e su più pagine); saldo iniziale/finale e riepilogo; verifica saldo iniziale + entrate − uscite = saldo finale (altrimenti l'import si ferma)
+- Classificazione: pagamenti con carta (data reale del POS, nome e luogo del negozio), addebiti diretti SDD, stipendio (bonifico con "EMOLUMENTI"/competenze), bonifici a sé stessi e giroconti ignorati, prelievi ignorati, canone +x/−x nello stesso giorno ignorato, commissioni/bolli/spese nella categoria "Commissioni" (creata se manca)
+- Categorie proposte: regole negozio → categoria (`import_rules`, salvate quando scegli una categoria), parole chiave (supermercati, carburante, abbonamenti, salute, svago, casa); "GAS" proposto come Benzina ma da confermare; senza proposta il movimento resta "Da confermare" e non viene importato
+- Doppioni: impronta `import_key` unica per utente (indice parziale) e confronto con i movimenti inseriti a mano (stesso tipo e importo, data entro 3 giorni)
+- Importazione in un'unica operazione (`import_transactions`) registrata in `import_batches`; `undo_import` toglie solo i movimenti di quell'importazione; elenco delle importazioni con "Annulla"
+- Copia di sicurezza sul dispositivo prima di ogni importazione; backup e ripristino includono impronte e regole
+- Correzione minore: `restore_backup` con "Unisci" non va in errore su movimenti già importati
+
 - Budget per categoria: colonna `categories.budget_cents` (vuota = nessun limite, > 0), uguale per tutti i mesi, solo per le categorie di spesa (script `supabase/migrations/0.3.3_budget_categorie.sql`, rieseguibile)
 - Carta Categorie: con almeno un budget la legenda diventa un elenco con speso / budget, barra verde, arancione dall'80%, rossa oltre il limite e testo "Restano", "Quasi finito", "Budget esaurito", "Oltre di"; le categorie senza budget mostrano importo e percentuale; tocco su una riga = filtro come prima
 - Pannello "Budget per categoria" dalla carta Categorie: un campo per ogni categoria di spesa attiva, con lo speso del mese, totale e confronto con il budget del mese; più categorie salvate insieme

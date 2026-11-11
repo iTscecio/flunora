@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.3.3";
+const APP_VERSION = "0.4.0";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -2090,9 +2090,10 @@ async function fetchAllOptional(table, orderCol) {
 const stripUser = (rows) => rows.map(({ user_id, ...r }) => r);
 
 async function buildBackup() {
-  const [categories, transactions, budgets, recurring] = await Promise.all([
+  const [categories, transactions, budgets, recurring, importRules] = await Promise.all([
     fetchAll("categories"), fetchAll("transactions"),
     fetchAllOptional("budgets", "month"), fetchAllOptional("recurring"),
+    fetchAllOptional("import_rules", "pattern"),
   ]);
   const { sections, budget_cents, opening, backup_reminder_days } = state.settingsData || {};
   return {
@@ -2105,6 +2106,7 @@ async function buildBackup() {
       transactions: stripUser(transactions),
       budgets: budgets.map((b) => ({ month: b.month, amount_cents: b.amount_cents })),
       recurring: stripUser(recurring),
+      import_rules: importRules.map((r) => ({ pattern: r.pattern, category_id: r.category_id })),
       settings: { sections: sections || state.sections, budget_cents, opening, backup_reminder_days },
     },
   };
@@ -2255,7 +2257,7 @@ async function renderCopies() {
     const li = el("li", "copy");
     const grow = el("div", "grow");
     grow.append(el("span", "t", whenText(c.created_at)),
-      el("span", "s", `${c.reason === "auto" ? "Automatica settimanale" : "Prima di un ripristino"} · ${c.tx} ${c.tx === 1 ? "movimento" : "movimenti"}`));
+      el("span", "s", `${c.reason === "auto" ? "Automatica settimanale" : c.reason === "import" ? "Prima di un'importazione" : "Prima di un ripristino"} · ${c.tx} ${c.tx === 1 ? "movimento" : "movimenti"}`));
     const btn = el("button", "act", "Ripristina");
     btn.type = "button";
     btn.addEventListener("click", () => {
@@ -2428,7 +2430,7 @@ async function runRestore() {
     // 2. ripristino in un'unica operazione sul database
     const d = r.obj.data;
     const { data: res, error } = await sb.rpc("restore_backup", {
-      payload: { categories: d.categories, transactions: d.transactions, budgets: d.budgets || [] },
+      payload: { categories: d.categories, transactions: d.transactions, budgets: d.budgets || [], import_rules: d.import_rules || [] },
       replace_all: r.mode === "replace",
     });
     if (error) {

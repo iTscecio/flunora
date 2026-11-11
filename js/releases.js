@@ -5,6 +5,20 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.4.0", date: "11 novembre 2026",
+    items: [
+      "Nuovo: importa l'estratto conto PDF della Banca di Piacenza, da Impostazioni › Importa estratto conto",
+      "Il file viene letto solo sul tuo iPhone: su Flunora arrivano solo i movimenti che confermi",
+      "Prima di importare, Flunora controlla che i conti tornino con il saldo dell'estratto conto",
+      "Rivedi tutto prima di salvare: movimenti da confermare, nuovi e ignorati",
+      "Categorie proposte in automatico, e Flunora si ricorda le tue scelte per la volta dopo",
+      "Nessun doppione, anche se importi due volte lo stesso file o hai già inserito un movimento a mano",
+      "Gli spostamenti tra i tuoi conti non contano come spese né entrate",
+      "Commissioni e bolli finiscono nella nuova categoria \"Commissioni\"",
+      "Puoi annullare un'importazione intera, anche giorni dopo",
+    ],
+  },
+  {
     version: "0.3.3", date: "11 novembre 2026",
     items: [
       "Nuovo: imposta un budget mensile per ogni categoria di spesa, da \"Budget per categoria\" nella pagina Mesi",

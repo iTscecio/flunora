@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611111338">
+  <link rel="stylesheet" href="css/style.css?v=202611111427">
 </head>
 <body>
 
@@ -204,8 +204,8 @@
             <span class="label">Categorie</span><span class="chev">&rsaquo;</span></li>
           <li class="tap" id="open-backup"><span class="ico" style="--c:#34c759"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span>
             <span class="label">Backup e ripristino</span><span id="set-backup" class="value"></span><span class="chev">&rsaquo;</span></li>
-          <li class="soon" data-ver="0.4"><span class="ico" style="--c:#30b0c7"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span>
-            <span class="label">Importa estratto conto</span><span class="badge">Coming Soon</span></li>
+          <li class="tap" id="open-import"><span class="ico" style="--c:#30b0c7"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span>
+            <span class="label">Importa estratto conto</span><span class="chev">&rsaquo;</span></li>
           <li class="soon" data-ver="0.5"><span class="ico" style="--c:#ff2d55"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg></span>
             <span class="label">Movimenti periodici</span><span class="badge">Coming Soon</span></li>
         </ul>
@@ -321,6 +321,34 @@
     </div>
 
     <!-- ---------- BACKUP E RIPRISTINO (0.3.0) ---------- -->
+    <!-- ---------- IMPORTA ESTRATTO CONTO (0.4.0) ---------- -->
+    <div id="import" class="settings-panel sub-panel" aria-hidden="true">
+      <header class="glass settings-head">
+        <button type="button" id="import-back" class="link-btn back-btn">&lsaquo; Impostazioni</button>
+        <h2>Importa</h2>
+        <span></span>
+      </header>
+      <div class="settings-body">
+        <div class="card imp-hero">
+          <span class="ic"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></svg></span>
+          <h2>Importa l'estratto conto</h2>
+          <span class="secondary">Scegli il PDF dell'estratto conto della Banca di Piacenza. Prima di salvare controlli ogni movimento.</span>
+          <label class="btn-primary imp-pick">Scegli il PDF<input type="file" id="import-file" accept=".pdf,application/pdf" hidden></label>
+        </div>
+        <ul class="card list settings imp-promises">
+          <li><span class="ico" style="--c:#34c759"><svg viewBox="0 0 24 24"><path d="M7 2h10a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM11 18h2"/></svg></span>
+            <span class="label"><b>Il file resta sul tuo iPhone</b><small>Su Flunora arrivano solo i movimenti che confermi</small></span></li>
+          <li><span class="ico" style="--c:#007aff"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></svg></span>
+            <span class="label"><b>Nessun doppione</b><small>Anche reimportando lo stesso file</small></span></li>
+          <li><span class="ico" style="--c:#ff9500"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg></span>
+            <span class="label"><b>Puoi sempre tornare indietro</b><small>Annulli un'importazione con un tocco</small></span></li>
+        </ul>
+        <h3 class="section-title">Importazioni precedenti</h3>
+        <ul id="import-history" class="card list settings"></ul>
+        <p class="secondary small foot">Tocca un'importazione per annullarla: vengono tolti solo i suoi movimenti.</p>
+      </div>
+    </div>
+
     <div id="backup" class="settings-panel sub-panel" aria-hidden="true">
       <header class="glass settings-head">
         <button type="button" id="backup-back" class="link-btn back-btn">&lsaquo; Impostazioni</button>
@@ -449,6 +477,22 @@
       <p id="catbud-msg" class="msg" role="status"></p>
     </form>
 
+    <!-- ---------- IMPORTAZIONE: controllo, revisione, fatto (0.4.0) ---------- -->
+    <div id="imp-backdrop" class="sheet-backdrop top"></div>
+    <div id="imp-sheet" class="sheet top imp-sheet" aria-hidden="true" role="dialog" aria-labelledby="imp-title">
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <button type="button" id="imp-cancel" class="link-btn">Annulla</button>
+        <h2 id="imp-title">Controllo</h2>
+        <button type="button" id="imp-done" class="link-btn strong" hidden>Fine</button>
+      </div>
+      <div id="imp-body" class="imp-body"></div>
+      <div id="imp-foot" class="imp-foot" hidden>
+        <button type="button" id="imp-go" class="btn-primary"></button>
+        <small id="imp-foot-note"></small>
+      </div>
+    </div>
+
     <!-- ---------- SALDO INIZIALE (0.2.4) ---------- -->
     <div id="opening-backdrop" class="sheet-backdrop top"></div>
     <form id="opening-sheet" class="sheet top" aria-hidden="true" novalidate>
@@ -490,9 +534,11 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611111338"></script>
-  <script src="js/releases.js?v=202611111338"></script>
-  <script src="js/icons.js?v=202611111338"></script>
-  <script src="js/app.js?v=202611111338"></script>
+  <script src="js/config.js?v=202611111427"></script>
+  <script src="js/releases.js?v=202611111427"></script>
+  <script src="js/icons.js?v=202611111427"></script>
+  <script src="js/app.js?v=202611111427"></script>
+  <script src="js/bank-bdp.js?v=202611111427"></script>
+  <script src="js/import.js?v=202611111427"></script>
 </body>
 </html>
