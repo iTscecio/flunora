@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611122219">
+  <link rel="stylesheet" href="css/style.css?v=202611122246">
 </head>
 <body>
 
@@ -205,13 +205,22 @@
       <div id="adv-closed" hidden></div>
     </main>
 
+    <!-- ---------- DESIDERI (0.5.0) ---------- -->
     <main id="page-desideri" class="page" hidden>
-      <header class="page-head"><h1>Desideri</h1></header>
-      <div class="card placeholder">
+      <header class="page-head"><h1>Desideri</h1><button type="button" id="wish-new" class="wish-new">+ Nuovo</button></header>
+      <section class="card wish-sum" id="wish-sum">
+        <span class="lbl">Messi da parte</span>
+        <span class="big" id="wish-total">0,00 €</span>
+        <span class="secondary small" id="wish-count"></span>
+      </section>
+      <div id="wish-list"></div>
+      <div id="wish-empty" class="card placeholder" hidden>
         <span class="ph-ico" style="--c:#30b0c7"><svg viewBox="0 0 24 24" class="stroke"><rect x="3.5" y="8" width="17" height="4" rx="1"/><path d="M5 12v8h14v-8M12 8v12M12 8c-1.5-3.5-6-3.5-5-.5.5 1.2 2.5.5 5 .5zM12 8c1.5-3.5 6-3.5 5-.5-.5 1.2-2.5.5-5 .5z"/></svg></span>
-        <h2>In arrivo</h2>
-        <p class="secondary">Qui metterai le cose che desideri, con quanto costano e i soldi che metti da parte per ognuna.</p>
+        <h2>Cosa ti piacerebbe comprare?</h2>
+        <p class="secondary">Aggiungi un desiderio con quanto costa: poi metti da parte i soldi un po' alla volta, senza toglierli dal conto.</p>
       </div>
+      <button type="button" id="wish-closed-toggle" class="adv-closed-toggle" hidden></button>
+      <div id="wish-closed" hidden></div>
     </main>
 
     <!-- ---------- IMPOSTAZIONI (pannello a schermo intero) ---------- -->
@@ -595,6 +604,52 @@
       <button type="button" id="action-cancel" class="action-cancel">Annulla</button>
     </div>
 
+    <!-- ---------- 0.5.0: NUOVO / MODIFICA DESIDERIO ---------- -->
+    <div id="wish-backdrop" class="sheet-backdrop top"></div>
+    <form id="wish-sheet" class="sheet top" aria-hidden="true" novalidate>
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <button type="button" id="wish-cancel" class="link-btn">Annulla</button>
+        <h2 id="wish-title">Nuovo desiderio</h2>
+        <button type="submit" id="wish-save" class="link-btn strong">Salva</button>
+      </div>
+      <label class="amount">
+        <span>€</span>
+        <input id="wish-price" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Quanto costa">
+      </label>
+      <p class="adv-hint">Quanto costa</p>
+      <div class="group">
+        <label class="group-row"><span>Desiderio</span><input id="wish-name" placeholder="Es. Bici da corsa" maxlength="80" autocomplete="off"></label>
+        <label class="group-row"><span>Entro il</span><input type="month" id="wish-due"></label>
+        <label class="group-row"><span>Link</span><input id="wish-link" type="url" placeholder="Facoltativo" maxlength="500" autocomplete="off"></label>
+        <label class="group-row"><span>Nota</span><input id="wish-note" placeholder="Facoltativa" maxlength="300" autocomplete="off"></label>
+      </div>
+      <p id="wish-plan" class="secondary small foot"></p>
+      <p id="wish-msg" class="msg" role="status"></p>
+    </form>
+
+    <!-- ---------- 0.5.0: METTI DA PARTE / RIPRENDI ---------- -->
+    <div id="wmove-backdrop" class="sheet-backdrop top"></div>
+    <form id="wmove-sheet" class="sheet top" aria-hidden="true" novalidate>
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <button type="button" id="wmove-cancel" class="link-btn">Annulla</button>
+        <h2 id="wmove-title">Metti da parte</h2>
+        <button type="submit" id="wmove-save" class="link-btn strong">Fatto</button>
+      </div>
+      <div class="segmented two" id="wmove-dir">
+        <button type="button" data-dir="in">Metti da parte</button>
+        <button type="button" data-dir="out">Riprendi</button>
+      </div>
+      <label class="amount">
+        <span>€</span>
+        <input id="wmove-amount" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Importo">
+      </label>
+      <div id="wmove-quick" class="chips"></div>
+      <p id="wmove-note" class="secondary small foot"></p>
+      <p id="wmove-msg" class="msg" role="status"></p>
+    </form>
+
     <!-- ---------- 0.4.4: PANNELLO ALTRE SEZIONI ---------- -->
     <div id="more-backdrop" class="sheet-backdrop topmost"></div>
     <div id="more-sheet" class="action-sheet more-sheet" aria-hidden="true" role="dialog" aria-labelledby="more-title">
@@ -612,11 +667,11 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611122219"></script>
-  <script src="js/releases.js?v=202611122219"></script>
-  <script src="js/icons.js?v=202611122219"></script>
-  <script src="js/app.js?v=202611122219"></script>
-  <script src="js/bank-bdp.js?v=202611122219"></script>
-  <script src="js/import.js?v=202611122219"></script>
+  <script src="js/config.js?v=202611122246"></script>
+  <script src="js/releases.js?v=202611122246"></script>
+  <script src="js/icons.js?v=202611122246"></script>
+  <script src="js/app.js?v=202611122246"></script>
+  <script src="js/bank-bdp.js?v=202611122246"></script>
+  <script src="js/import.js?v=202611122246"></script>
 </body>
 </html>

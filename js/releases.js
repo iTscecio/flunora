@@ -5,6 +5,17 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.5.0", date: "12 novembre 2026",
+    items: [
+      "Nuovo: la sezione Desideri, per le cose che vuoi comprare; si attiva in Impostazioni › Sezioni",
+      "Per ogni desiderio scrivi quanto costa e, se vuoi, entro quando, un link e una nota; Flunora ti dice quanto mettere da parte ogni mese",
+      "\"Metti da parte\" e \"Riprendi\" spostano i soldi solo virtualmente: restano sul conto, non sono spese e non toccano il budget",
+      "Con la sezione attiva, nella Dashboard il numero grande è il Disponibile; sotto vedi \"Desideri\" e \"Conto\". Disattivando la sezione torna il saldo totale",
+      "Metti in ordine di priorità i desideri trascinando ≡",
+      "\"Comprato\" apre il pannello + già compilato: salvando, la spesa va nella categoria che scegli e il desiderio si chiude; \"Rinuncio\" rende di nuovo disponibili i soldi",
+    ],
+  },
+  {
     version: "0.4.6", date: "12 novembre 2026",
     items: [
       "Nuovo: importando l'estratto conto, un bonifico in arrivo con l'importo di una quota aperta viene proposto come restituzione di un anticipo; se confermi, la quota si chiude da sola e non conta come entrata",

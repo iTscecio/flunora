@@ -2,6 +2,17 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.5.0
+- Nuova sezione Desideri (non più segnaposto): riepilogo "Messi da parte", schede con prezzo, barra di avanzamento, "mancano …", "Entro mese anno: … al mese" se c'è una scadenza, nota e link; "Comprati e rinunciati (n)" a scomparsa; toccando il titolo: Modifica, Riprendi soldi, Rinuncio (o Elimina per quelli chiusi)
+- Ordine di priorità trascinando la maniglia ≡ (con almeno 2 desideri attivi; `attachSort`, salva `sort_order`)
+- Pannello "Nuovo desiderio" (`#wish-sheet`): quanto costa, desiderio, entro il (mese), link, nota; mostra quanto mettere da parte al mese
+- Pannello "Metti da parte / Riprendi" (`#wmove-sheet`) con scorciatoie (rata mensile, tutto quello che manca, tutto)
+- "Comprato" apre il pannello + come uscita già compilata (importo, descrizione), senza Frequenti né Anticipo; salvando, il desiderio passa a "comprato" e ricorda la spesa (`bought_tx_id`)
+- Saldo (bozza A): con la sezione Desideri attiva e soldi messi da parte il numero grande è "Disponibile" = conto − Desideri; sotto "Desideri … · Conto …" (+ "da ricevere" degli anticipi). Sezione spenta → "Saldo totale" come prima
+- Supabase (`0.5.0_desideri.sql`): tabella `wishes` (stato attivo / comprato / rinuncia) con regole per utente; `restore_backup` ripristina anche i desideri (con "Unisci" salta quelli con stesso nome e prezzo)
+- Backup: il file include i desideri
+- I soldi messi da parte non sono movimenti: non contano in budget, "Ti restano", Categorie e totali
+
 ## 0.4.6
 - Import dell'estratto conto collegato agli anticipi (`buildItems` legge `advances` e `advance_shares`; se mancano si va avanti come prima):
   - uscita con lo stesso importo del totale di un anticipo e data entro 3 giorni → "dup", nota "Già negli Anticipi: …"

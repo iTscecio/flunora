@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.4.6";
+const APP_VERSION = "0.5.0";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -220,6 +220,7 @@ function route() {
   if (p === "dashboard") loadDashboard();
   if (p === "mesi") loadMonth();
   if (p === "anticipi") loadAdvances();
+  if (p === "desideri") loadWishes();
 }
 window.addEventListener("hashchange", route);
 
@@ -969,6 +970,7 @@ function openSheet(tx) {
 }
 
 function closeSheet() {
+  state.wishBuying = null;
   $("sheet").classList.remove("open");
   $("sheet").setAttribute("aria-hidden", "true");
   $("sheet-backdrop").classList.remove("open");
@@ -1028,7 +1030,7 @@ function freqItems(kind) {
 
 function renderFreq() {
   const box = $("freq-box"), row = $("freq-row");
-  const items = state.editing ? [] : freqItems(state.kind);
+  const items = state.editing || state.wishBuying ? [] : freqItems(state.kind);
   box.hidden = items.length === 0;
   row.replaceChildren(...items.map((it) => {
     const b = el("button", "freq-chip");
@@ -1097,6 +1099,266 @@ $("freq-reset").addEventListener("click", () => {
   toast("Scorciatoie di nuovo visibili");
 });
 
+
+
+// =========================================================
+// 0.5.0 — DESIDERI
+// Tabella wishes: cosa, quanto costa, quanto hai messo da parte.
+// I soldi messi da parte restano sul conto: il saldo mostra il "Disponibile".
+// "Comprato" apre il pannello + già compilato; salvato, il desiderio si chiude.
+// =========================================================
+const wishesOn = () => state.sections.some((x) => x.id === "desideri" && x.on);
+
+async function loadWishSaved() {
+  const { data, error } = await sb.from("wishes").select("saved_cents").eq("status", "attivo");
+  state.wishSavedCents = error ? 0 : data.reduce((a, w) => a + w.saved_cents, 0);
+}
+
+// mesi da oggi alla scadenza (almeno 1) e quanto mettere da parte al mese
+function wishPlan(w) {
+  if (!w.due_date) return null;
+  const now = new Date(), [y, m] = w.due_date.split("-").map(Number);
+  const months = Math.max(1, (y - now.getFullYear()) * 12 + (m - 1 - now.getMonth()) + 1);
+  const left = Math.max(0, w.price_cents - w.saved_cents);
+  return { months, monthly: Math.ceil(left / months / 100) * 100, label: `${MESI[m - 1]} ${y}` };
+}
+
+async function loadWishes() {
+  const { data, error } = await sb.from("wishes").select("*").order("sort_order").order("created_at");
+  if (error) {
+    $("wish-list").replaceChildren(el("p", "secondary", "I Desideri non sono ancora disponibili: esegui lo script della 0.5.0 in Supabase."));
+    return;
+  }
+  state.wishes = data;
+  const open = data.filter((w) => w.status === "attivo");
+  const closed = data.filter((w) => w.status !== "attivo");
+  const saved = open.reduce((a, w) => a + w.saved_cents, 0);
+  state.wishSavedCents = saved;
+  $("wish-total").textContent = fmt(saved);
+  const price = open.reduce((a, w) => a + w.price_cents, 0);
+  $("wish-count").textContent = open.length
+    ? `per ${open.length} ${open.length === 1 ? "desiderio" : "desideri"} · ${Math.round((saved / Math.max(1, price)) * 100)}% del totale (${fmt(price)})`
+    : "";
+  $("wish-sum").hidden = !open.length;
+  $("wish-empty").hidden = open.length > 0;
+  $("wish-list").replaceChildren(...open.map(wishCard));
+  const t = $("wish-closed-toggle");
+  t.hidden = !closed.length;
+  t.textContent = `Comprati e rinunciati (${closed.length}) ${$("wish-closed").hidden ? "›" : "⌄"}`;
+  $("wish-closed").replaceChildren(...closed.map(wishCard));
+}
+$("wish-closed-toggle").addEventListener("click", () => {
+  $("wish-closed").hidden = !$("wish-closed").hidden;
+  $("wish-closed-toggle").textContent = $("wish-closed-toggle").textContent.replace(/[›⌄]$/, $("wish-closed").hidden ? "›" : "⌄");
+});
+
+function wishCard(w) {
+  const card = el("section", "card wish-card" + (w.status !== "attivo" ? " closed" : ""));
+  const head = el("div", "adv-head");
+  head.append(el("h2", null, w.name), el("b", "wish-price", fmt(w.price_cents)));
+  card.append(head);
+  if (w.status !== "attivo") {
+    card.append(el("p", "secondary small adv-sub", w.status === "comprato" ? `Comprato il ${advDate(w.closed_on)}` : `Rinunciato il ${advDate(w.closed_on)}`));
+    head.addEventListener("click", () => wishMenu(w));
+    return card;
+  }
+  // ordine di priorità: si trascina con la maniglia ≡
+  card.dataset.id = w.id;
+  if ((state.wishes || []).filter((x) => x.status === "attivo").length > 1) {
+    const handle = el("span", "handle wish-handle");
+    handle.setAttribute("aria-label", `Sposta ${w.name}`);
+    handle.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 8h14M5 12h14M5 16h14"/></svg>';
+    head.append(handle);
+    attachSort(card, handle, saveWishOrder);
+  }
+  const pct = Math.min(100, Math.round((w.saved_cents / w.price_cents) * 100));
+  const bar = el("div", "wish-bar");
+  const fill = el("i"); fill.style.width = pct + "%";
+  if (pct >= 100) fill.classList.add("full");
+  bar.append(fill);
+  const left = Math.max(0, w.price_cents - w.saved_cents);
+  const info = el("p", "secondary small wish-info",
+    left ? `${fmt(w.saved_cents)} messi da parte · mancano ${fmt(left)}` : `${fmt(w.saved_cents)} messi da parte · ci sei!`);
+  card.append(bar, info);
+  const plan = wishPlan(w);
+  if (plan && left) card.append(el("p", "small wish-plan", `Entro ${plan.label}: ${fmt(plan.monthly)} al mese`));
+  if (w.note) card.append(el("p", "secondary small wish-note", w.note));
+  const row = el("div", "wish-actions");
+  const put = el("button", "adv-btn", "Metti da parte");
+  put.type = "button";
+  put.addEventListener("click", () => openWishMove(w, "in"));
+  const buy = el("button", "adv-btn ghost", "Comprato");
+  buy.type = "button";
+  buy.addEventListener("click", () => buyWish(w));
+  row.append(put, buy);
+  if (w.link) {
+    const a = el("a", "wish-link", "Apri link ↗");
+    a.href = w.link; a.target = "_blank"; a.rel = "noopener";
+    row.append(a);
+  }
+  card.append(row);
+  head.addEventListener("click", () => wishMenu(w));
+  return card;
+}
+
+async function saveWishOrder(ids) {
+  const changes = ids.map((id, i) => ({ id, i })).filter(({ id, i }) => state.wishes.find((w) => w.id === id)?.sort_order !== i);
+  for (const { id, i } of changes) {
+    const { error } = await sb.from("wishes").update({ sort_order: i }).eq("id", id);
+    if (error) { toast("Ordine non salvato: " + traduciErrore(error.message)); break; }
+    const w = state.wishes.find((x) => x.id === id);
+    if (w) w.sort_order = i;
+  }
+}
+
+function wishMenu(w) {
+  const actions = [];
+  if (w.status === "attivo") {
+    actions.push({ label: "Modifica", onClick: () => openWishSheet(w) });
+    if (w.saved_cents) actions.push({ label: "Riprendi soldi", onClick: () => openWishMove(w, "out") });
+    actions.push({ label: "Rinuncio", danger: true, onClick: () => closeWish(w, "rinuncia").then(() => toast(`${w.name}: soldi di nuovo disponibili`)) });
+  } else {
+    actions.push({ label: "Elimina", danger: true, onClick: async () => {
+      const { error } = await sb.from("wishes").delete().eq("id", w.id);
+      if (error) return toast("Errore: " + traduciErrore(error.message));
+      loadWishes();
+    } });
+  }
+  actionSheet({ title: w.name, message: w.status === "attivo" ? "Rinunciando, i soldi messi da parte tornano disponibili." : "", actions });
+}
+
+async function closeWish(w, status, date = isoDate(new Date())) {
+  const patch = { status, closed_on: date };
+  if (status === "comprato" && w.txId) patch.bought_tx_id = w.txId;
+  const { error } = await sb.from("wishes").update(patch).eq("id", w.id);
+  if (error) return toast("Errore: " + traduciErrore(error.message));
+  await loadWishSaved();
+  if (state.page === "desideri") loadWishes();
+  if (state.page === "dashboard") loadBalance();
+}
+
+// "Comprato": il pannello + parte già compilato come uscita
+function buyWish(w) {
+  openSheet(null);
+  setKind("uscita");
+  state.wishBuying = { ...w };
+  $("f-amount").value = fmtPlain(w.price_cents);
+  $("f-desc").value = w.name;
+  $("sheet-title").textContent = "Hai comprato";
+  $("freq-box").hidden = true;          // niente scorciatoie: è già compilato
+  $("kind-anticipo").hidden = true;
+  setMsg($("sheet-msg"), "Scegli la categoria e controlla l'importo: salvando, il desiderio si chiude e i soldi messi da parte tornano nel conto.");
+}
+
+// ---------- nuovo / modifica ----------
+function openWishSheet(w = null) {
+  state.wishEdit = w;
+  $("wish-title").textContent = w ? "Modifica desiderio" : "Nuovo desiderio";
+  $("wish-price").value = w ? fmtPlain(w.price_cents) : "";
+  $("wish-name").value = w?.name || "";
+  $("wish-due").value = w?.due_date ? w.due_date.slice(0, 7) : "";
+  $("wish-link").value = w?.link || "";
+  $("wish-note").value = w?.note || "";
+  setMsg($("wish-msg"), "");
+  updateWishPlan();
+  $("wish-sheet").scrollTop = 0;
+  $("wish-sheet").classList.add("open");
+  $("wish-sheet").setAttribute("aria-hidden", "false");
+  $("wish-backdrop").classList.add("open");
+}
+function closeWishSheet() {
+  $("wish-sheet").classList.remove("open");
+  $("wish-sheet").setAttribute("aria-hidden", "true");
+  $("wish-backdrop").classList.remove("open");
+  document.activeElement?.blur();
+}
+function updateWishPlan() {
+  const price = parseAmount($("wish-price").value);
+  const due = $("wish-due").value;
+  const plan = price && due ? wishPlan({ price_cents: price, saved_cents: state.wishEdit?.saved_cents || 0, due_date: due + "-01" }) : null;
+  $("wish-plan").textContent = plan ? `Per arrivarci entro ${plan.label} metti da parte circa ${fmt(plan.monthly)} al mese.` : "";
+}
+["wish-price", "wish-due"].forEach((id) => $(id).addEventListener("input", updateWishPlan));
+$("wish-new").addEventListener("click", () => openWishSheet(null));
+$("wish-cancel").addEventListener("click", closeWishSheet);
+$("wish-backdrop").addEventListener("click", closeWishSheet);
+$("wish-sheet").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const msg = $("wish-msg");
+  const price = parseAmount($("wish-price").value);
+  const name = $("wish-name").value.trim();
+  if (price === null) { setMsg(msg, "Inserisci quanto costa, es. 1.200.", true); return $("wish-price").focus(); }
+  if (!name) { setMsg(msg, "Scrivi cosa desideri.", true); return $("wish-name").focus(); }
+  const link = $("wish-link").value.trim();
+  if (link && !/^https?:\/\//i.test(link)) { setMsg(msg, "Il link deve iniziare con https://", true); return; }
+  const row = {
+    name, price_cents: price, due_date: $("wish-due").value ? $("wish-due").value + "-01" : null,
+    link: link || null, note: $("wish-note").value.trim() || null,
+  };
+  const w = state.wishEdit;
+  if (!w) Object.assign(row, { sort_order: (state.wishes || []).filter((x) => x.status === "attivo").length, saved_cents: 0, status: "attivo" });
+  const { error } = w ? await sb.from("wishes").update(row).eq("id", w.id) : await sb.from("wishes").insert(row);
+  if (error) return setMsg(msg, "Errore nel salvataggio: " + traduciErrore(error.message), true);
+  closeWishSheet();
+  toast(w ? "Desiderio aggiornato" : "Desiderio aggiunto");
+  loadWishes();
+});
+
+// ---------- metti da parte / riprendi ----------
+function openWishMove(w, dir) {
+  state.wishMove = { w, dir };
+  $("wmove-title").textContent = w.name;
+  $("wmove-amount").value = "";
+  setMsg($("wmove-msg"), "");
+  renderWishMove();
+  $("wmove-sheet").scrollTop = 0;
+  $("wmove-sheet").classList.add("open");
+  $("wmove-sheet").setAttribute("aria-hidden", "false");
+  $("wmove-backdrop").classList.add("open");
+}
+function closeWishMove() {
+  $("wmove-sheet").classList.remove("open");
+  $("wmove-sheet").setAttribute("aria-hidden", "true");
+  $("wmove-backdrop").classList.remove("open");
+  document.activeElement?.blur();
+}
+function renderWishMove() {
+  const { w, dir } = state.wishMove;
+  document.querySelectorAll("#wmove-dir button").forEach((b) => b.classList.toggle("on", b.dataset.dir === dir));
+  const left = Math.max(0, w.price_cents - w.saved_cents);
+  const plan = wishPlan(w);
+  const quick = dir === "in"
+    ? [plan && left ? [`${fmt(plan.monthly)} al mese`, Math.min(plan.monthly, left)] : null, left ? [`Tutto quello che manca (${fmt(left)})`, left] : null]
+    : [w.saved_cents ? [`Tutto (${fmt(w.saved_cents)})`, w.saved_cents] : null];
+  $("wmove-quick").replaceChildren(...quick.filter(Boolean).map(([label, cents]) => {
+    const b = el("button", "chip", label);
+    b.type = "button";
+    b.addEventListener("click", () => { $("wmove-amount").value = fmtPlain(cents); });
+    return b;
+  }));
+  $("wmove-note").textContent = dir === "in"
+    ? `Ora ${fmt(w.saved_cents)} di ${fmt(w.price_cents)}. I soldi restano sul conto: scendono solo dal Disponibile.`
+    : `Messi da parte ${fmt(w.saved_cents)}. Ripresi, tornano nel Disponibile.`;
+}
+document.querySelectorAll("#wmove-dir button").forEach((b) => b.addEventListener("click", () => {
+  state.wishMove.dir = b.dataset.dir; renderWishMove();
+}));
+$("wmove-cancel").addEventListener("click", closeWishMove);
+$("wmove-backdrop").addEventListener("click", closeWishMove);
+$("wmove-sheet").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const { w, dir } = state.wishMove;
+  const cents = parseAmount($("wmove-amount").value);
+  const msg = $("wmove-msg");
+  if (cents === null) { setMsg(msg, "Inserisci un importo, es. 50.", true); return $("wmove-amount").focus(); }
+  if (dir === "out" && cents > w.saved_cents) { setMsg(msg, `Puoi riprendere al massimo ${fmt(w.saved_cents)}.`, true); return; }
+  const saved = w.saved_cents + (dir === "in" ? cents : -cents);
+  const { error } = await sb.from("wishes").update({ saved_cents: saved }).eq("id", w.id);
+  if (error) return setMsg(msg, "Errore: " + traduciErrore(error.message), true);
+  closeWishMove();
+  toast(dir === "in" ? `${fmt(cents)} messi da parte per ${w.name}` : `${fmt(cents)} tornati disponibili`);
+  loadWishes();
+});
 
 // =========================================================
 // 0.4.5 — ANTICIPI
@@ -1373,15 +1635,18 @@ $("sheet").addEventListener("submit", async (e) => {
   save.disabled = true;
   const wasEdit = !!state.editing;
   const old = state.editing ? { ...state.editing } : null;
-  const { error } = wasEdit
-    ? await sb.from("transactions").update(row).eq("id", state.editing.id)
-    : await sb.from("transactions").insert(row);
+  const { data: saved, error } = wasEdit
+    ? await sb.from("transactions").update(row).eq("id", state.editing.id).select().maybeSingle()
+    : await sb.from("transactions").insert(row).select().maybeSingle();
+  if (!error && state.wishBuying) state.wishBuying.txId = saved?.id || null;
   save.disabled = false;
   if (error) { setMsg(msg, "Errore nel salvataggio: " + traduciErrore(error.message), true); return; }
 
   state.lastCategory[row.kind] = row.category_id;
+  const buying = state.wishBuying; // 0.5.0: acquisto di un desiderio
   closeSheet();
-  toast(wasEdit ? "Movimento aggiornato" : "Movimento salvato");
+  if (buying && !wasEdit) await closeWish(buying, "comprato", row.date);
+  toast(buying && !wasEdit ? `${buying.name}: comprato` : wasEdit ? "Movimento aggiornato" : "Movimento salvato");
   refreshAfterChange(row.date);
   // 0.3.3: avviso se questa spesa avvicina o supera il budget della categoria
   budgetAlert(row, old).then((text) => { if (text) toast(text); });
@@ -1428,7 +1693,7 @@ const SECTIONS = {
   abbonamenti: { name: "Abbonamenti", color: "#ff2d55", placeholder: true },
   auto:        { name: "Auto",        color: "#ff9500", placeholder: true },
   anticipi:    { name: "Anticipi",    color: "#af52de" },
-  desideri:    { name: "Desideri",    color: "#30b0c7", placeholder: true },
+  desideri:    { name: "Desideri",    color: "#30b0c7" },
 };
 const DEFAULT_SECTIONS = [
   { id: "dashboard", on: true }, { id: "mesi", on: true },
@@ -2497,7 +2762,7 @@ async function loadBalance() {
     card.replaceChildren(el("span", "lbl", "Saldo totale"), el("span", "big", "–"), el("span", "when", ""));
   }
   try {
-    const [cents] = await Promise.all([computeBalance(o), loadAdvanceOpen()]);
+    const [cents] = await Promise.all([computeBalance(o), loadAdvanceOpen(), loadWishSaved()]);
     if (!opening()) return;
     state.balance = cents;
     showBalance(false);
@@ -2531,6 +2796,7 @@ function showBalance(fromZero) {
     cancelAnimationFrame(big._raf);
     big._value = 0;                                  // al prossimo "mostra" l'importo scorre da zero
     big.textContent = SALDO_MASK;
+    card.querySelector(".lbl").textContent = wishesOn() && state.wishSavedCents ? "Disponibile" : "Saldo totale";
     big.classList.remove("neg");                     // nemmeno il rosso deve far capire se è negativo
     big.classList.add("masked");
     card.querySelector(".when").textContent = `Oggi, ${oggi}`;
@@ -2539,10 +2805,16 @@ function showBalance(fromZero) {
   }
   big.classList.remove("masked");
   if (fromZero) big._value = 0;
-  countTo(big, cents, (v) => (v < 0 ? "− " : "") + fmt(Math.abs(v)));
-  big.classList.toggle("neg", cents < 0);
-  card.querySelector(".when").textContent = (cents < 0 ? `In negativo oggi, ${oggi}` : `Disponibili oggi, ${oggi}`) +
-    (state.advOpenCents > 0 ? ` · da ricevere ${fmt(state.advOpenCents)}` : "");
+  // 0.5.0 (bozza A): con la sezione Desideri attiva e soldi messi da parte, il numero grande è il disponibile
+  const wishes = wishesOn() ? state.wishSavedCents || 0 : 0;
+  const shown = cents - wishes;
+  card.querySelector(".lbl").textContent = wishes ? "Disponibile" : "Saldo totale";
+  countTo(big, shown, (v) => (v < 0 ? "− " : "") + fmt(Math.abs(v)));
+  big.classList.toggle("neg", shown < 0);
+  const extra = state.advOpenCents > 0 ? ` · da ricevere ${fmt(state.advOpenCents)}` : "";
+  card.querySelector(".when").textContent = wishes
+    ? `Desideri ${fmt(wishes)} · Conto ${(cents < 0 ? "− " : "") + fmt(Math.abs(cents))}${extra}`
+    : (cents < 0 ? `In negativo oggi, ${oggi}` : `Disponibili oggi, ${oggi}`) + extra;
   card.setAttribute("aria-label", `Saldo totale ${(cents < 0 ? "− " : "") + fmt(Math.abs(cents))}. Tocca per cambiare il saldo iniziale`);
 }
 
@@ -2636,11 +2908,12 @@ async function fetchAllOptional(table, orderCol) {
 const stripUser = (rows) => rows.map(({ user_id, ...r }) => r);
 
 async function buildBackup() {
-  const [categories, transactions, budgets, recurring, importRules, advances, advShares] = await Promise.all([
+  const [categories, transactions, budgets, recurring, importRules, advances, advShares, wishes] = await Promise.all([
     fetchAll("categories"), fetchAll("transactions"),
     fetchAllOptional("budgets", "month"), fetchAllOptional("recurring"),
     fetchAllOptional("import_rules", "pattern"),
     fetchAllOptional("advances"), fetchAllOptional("advance_shares"), // 0.4.5
+    fetchAllOptional("wishes"), // 0.5.0
   ]);
   const { sections, budget_cents, opening, backup_reminder_days } = state.settingsData || {};
   return {
@@ -2660,6 +2933,11 @@ async function buildBackup() {
         own_category_id: a.own_category_id,
         shares: advShares.filter((q) => q.advance_id === a.id).sort((x, y) => x.sort_order - y.sort_order)
           .map((q) => ({ person: q.person, amount_cents: q.amount_cents, status: q.status, closed_on: q.closed_on })),
+      })),
+      // 0.5.0: desideri (il collegamento alla spesa d'acquisto non serve al ripristino)
+      wishes: wishes.map((w) => ({
+        name: w.name, price_cents: w.price_cents, saved_cents: w.saved_cents, due_date: w.due_date, link: w.link,
+        note: w.note, sort_order: w.sort_order, status: w.status, closed_on: w.closed_on,
       })),
       settings: { sections: sections || state.sections, budget_cents, opening, backup_reminder_days },
     },
@@ -2984,7 +3262,7 @@ async function runRestore() {
     // 2. ripristino in un'unica operazione sul database
     const d = r.obj.data;
     const { data: res, error } = await sb.rpc("restore_backup", {
-      payload: { categories: d.categories, transactions: d.transactions, budgets: d.budgets || [], import_rules: d.import_rules || [], advances: d.advances || [] },
+      payload: { categories: d.categories, transactions: d.transactions, budgets: d.budgets || [], import_rules: d.import_rules || [], advances: d.advances || [], wishes: d.wishes || [] },
       replace_all: r.mode === "replace",
     });
     if (error) {
