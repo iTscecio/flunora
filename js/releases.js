@@ -12,6 +12,7 @@ window.RELEASES = [
       "\"Metti da parte\" e \"Riprendi\" spostano i soldi solo virtualmente: restano sul conto, non sono spese e non toccano il budget",
       "Con la sezione attiva, nella Dashboard il numero grande è il Disponibile; sotto vedi \"Desideri\" e \"Conto\". Disattivando la sezione torna il saldo totale",
       "Metti in ordine di priorità i desideri trascinando ≡",
+      "Risolto un bug per cui nei Desideri il mese scelto compariva con la lettera minuscola (bug #008)",
       "\"Comprato\" apre il pannello + già compilato: salvando, la spesa va nella categoria che scegli e il desiderio si chiude; \"Rinuncio\" rende di nuovo disponibili i soldi",
     ],
   },

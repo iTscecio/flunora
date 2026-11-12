@@ -1120,7 +1120,7 @@ function wishPlan(w) {
   const now = new Date(), [y, m] = w.due_date.split("-").map(Number);
   const months = Math.max(1, (y - now.getFullYear()) * 12 + (m - 1 - now.getMonth()) + 1);
   const left = Math.max(0, w.price_cents - w.saved_cents);
-  return { months, monthly: Math.ceil(left / months / 100) * 100, label: `${MESI[m - 1]} ${y}` };
+  return { months, monthly: Math.ceil(left / months / 100) * 100, label: `${MESI[m - 1][0].toUpperCase()}${MESI[m - 1].slice(1)} ${y}` }; // bug #008: mese con la maiuscola
 }
 
 async function loadWishes() {
