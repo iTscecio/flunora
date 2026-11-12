@@ -2,6 +2,15 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.4.4
+- Sezioni senza limite: l'interruttore in Impostazioni dice solo se una sezione è attiva; nella barra vanno le prime 4 attive (`MAX_TABS`) nell'ordine trascinato, le altre in "Altre sezioni"
+- Pulsante `#btn-more` (quattro quadratini, stile liquid glass) a sinistra dell'ingranaggio; compare solo se c'è almeno una sezione attiva fuori dalla barra; blu quando è aperta una di quelle sezioni
+- Pannello `#more-sheet` (stesso stile del menu dal basso): elenco delle sezioni fuori dalla barra con icona e colore; un tocco apre la pagina (`#id`) senza cambiare la barra; la lente della barra si nasconde
+- Impostazioni › Sezioni: sotto ogni sezione "Nella barra", "In Altre sezioni" o "Disattivata" (`markSectionPlaces`); tolto l'avviso "Al massimo 4 sezioni"; resta l'obbligo di almeno una sezione attiva
+- Nuove sezioni segnaposto, spente: Anticipi (0.4.5) e Desideri (0.5.0), con icona e pagina "In arrivo"
+- `normalizeSections` non spegne più le sezioni oltre la quarta
+- Nessuno script Supabase
+
 ## 0.4.3
 - Pannello + (solo "Nuovo movimento"): fila "Frequenti" (`#freq-box`, `#freq-row`) sotto Uscita / Entrata / Investimento, una fila per tipo
 - Scorciatoia = stesso tipo, categoria e descrizione (senza maiuscole/minuscole) registrata almeno 3 volte negli ultimi 90 giorni (`FREQ_MIN`, `FREQ_DAYS`); al massimo 6 (`FREQ_MAX`), le più usate prima, a parità la più recente; escluse le categorie archiviate

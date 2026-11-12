@@ -5,6 +5,15 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.4.4", date: "12 novembre 2026",
+    items: [
+      "Nuovo: le sezioni non sono più limitate a 4. Le prime 4 attive stanno nella barra, le altre si aprono dal pulsante a quattro quadratini accanto all'ingranaggio",
+      "Toccando una sezione nel pannello \"Altre sezioni\" si apre la sua pagina, senza spostare niente nella barra",
+      "In Impostazioni › Sezioni, sotto ogni sezione, vedi se è nella barra o in Altre sezioni; trascinando ≡ scegli quali stanno nella barra",
+      "Nuove sezioni segnaposto: Anticipi (in arrivo nella 0.4.5) e Desideri (in arrivo nella 0.5.0)",
+    ],
+  },
+  {
     version: "0.4.3", date: "12 novembre 2026",
     items: [
       "Nuovo: nel pannello + compare la fila \"Frequenti\", con le spese che registri più spesso; un tocco compila categoria, descrizione e, se è sempre lo stesso, l'importo",

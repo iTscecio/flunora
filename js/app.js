@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.4.3";
+const APP_VERSION = "0.4.4";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -209,6 +209,7 @@ function route() {
   for (const id of Object.keys(SECTIONS)) $("page-" + id).hidden = id !== p;
   document.querySelectorAll("#tab-pill .tab").forEach((t) => t.classList.toggle("active", t.dataset.page === p));
   moveLens(true);
+  renderMoreButton();
   // 0.3.1: nuova sezione = dissolvenza; stesso Mesi con un altro mese = scivola nella direzione della freccia
   const pageEl = $("page-" + p);
   const anim = prevPage !== p ? "enter" : state.slideDir ? `from-${state.slideDir}` : "";
@@ -1148,16 +1149,21 @@ const ICONS = {
   mesi: '<svg viewBox="0 0 24 24" class="stroke"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>',
   abbonamenti: '<svg viewBox="0 0 24 24" class="stroke"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg>',
   auto: '<svg viewBox="0 0 24 24" class="stroke"><path d="M5 16V11l2-4.5h10L19 11v5"/><path d="M3.5 16h17M5 11h14"/><circle cx="7.5" cy="17.5" r="1.8"/><circle cx="16.5" cy="17.5" r="1.8"/></svg>',
+  anticipi: '<svg viewBox="0 0 24 24" class="stroke"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
+  desideri: '<svg viewBox="0 0 24 24" class="stroke"><rect x="3.5" y="8" width="17" height="4" rx="1"/><path d="M5 12v8h14v-8M12 8v12M12 8c-1.5-3.5-6-3.5-5-.5.5 1.2 2.5.5 5 .5zM12 8c1.5-3.5 6-3.5 5-.5-.5 1.2-2.5.5-5 .5z"/></svg>',
 };
 const SECTIONS = {
   dashboard:   { name: "Dashboard",   color: "#007aff" },
   mesi:        { name: "Mesi",        color: "#34c759" },
   abbonamenti: { name: "Abbonamenti", color: "#ff2d55", placeholder: true },
   auto:        { name: "Auto",        color: "#ff9500", placeholder: true },
+  anticipi:    { name: "Anticipi",    color: "#af52de", placeholder: true },
+  desideri:    { name: "Desideri",    color: "#30b0c7", placeholder: true },
 };
 const DEFAULT_SECTIONS = [
   { id: "dashboard", on: true }, { id: "mesi", on: true },
   { id: "abbonamenti", on: false }, { id: "auto", on: false },
+  { id: "anticipi", on: false }, { id: "desideri", on: false },
 ];
 const LS_SECTIONS = "flunora.sections", LS_THEME = "flunora.theme";
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -1170,9 +1176,8 @@ function normalizeSections(list) {
     if (SECTIONS[s?.id] && !seen.has(s.id)) { seen.add(s.id); out.push({ id: s.id, on: !!s.on }); }
   }
   for (const d of DEFAULT_SECTIONS) if (!seen.has(d.id)) out.push({ ...d, on: false });
-  let n = 0;
-  for (const s of out) if (s.on && ++n > MAX_TABS) s.on = false;
-  if (n === 0) out[0].on = true;
+  // 0.4.4: nessun limite alle sezioni attive; oltre le prime 4 vanno in "Altre sezioni"
+  if (!out.some((s) => s.on)) out[0].on = true;
   return out;
 }
 
@@ -1230,7 +1235,7 @@ const saveSections = () => saveSettingsData("Sezioni salvate solo su questo disp
 function renderTabbar() {
   const pill = $("tab-pill");
   pill.replaceChildren(el("span", "lens no-anim"));
-  const on = state.sections.filter((s) => s.on);
+  const on = state.sections.filter((s) => s.on).slice(0, MAX_TABS);
   pill.style.setProperty("--n", on.length);
   for (const s of on) {
     const a = el("a", "tab");
@@ -1242,7 +1247,46 @@ function renderTabbar() {
     pill.append(a);
   }
   requestAnimationFrame(() => moveLens(false));
+  renderMoreButton();
 }
+
+// =========================================================
+// 0.4.4 — ALTRE SEZIONI: le sezioni attive oltre le prime 4 si aprono
+// dal pulsante accanto all'ingranaggio, senza spostare la barra
+// =========================================================
+const moreSections = () => state.sections.filter((s) => s.on).slice(MAX_TABS);
+function renderMoreButton() {
+  const extra = moreSections();
+  $("btn-more").hidden = extra.length === 0;
+  $("btn-more").classList.toggle("active", extra.some((s) => s.id === state.page));
+}
+function openMore() {
+  const list = $("more-list");
+  list.replaceChildren(...moreSections().map((s) => {
+    const info = SECTIONS[s.id];
+    const b = el("button", "opt more-opt" + (s.id === state.page ? " on" : ""));
+    b.type = "button";
+    const ico = el("span", "ico");
+    ico.style.setProperty("--c", info.color);
+    ico.innerHTML = ICONS[s.id];
+    b.append(ico, el("span", "label", info.name));
+    if (s.id === state.page) b.append(el("span", "here", "Aperta"));
+    else b.append(el("span", "chev", "\u203a"));
+    b.addEventListener("click", () => { closeMore(); location.hash = s.id; });
+    return b;
+  }));
+  $("more-sheet").classList.add("open");
+  $("more-sheet").setAttribute("aria-hidden", "false");
+  $("more-backdrop").classList.add("open");
+}
+function closeMore() {
+  $("more-sheet").classList.remove("open");
+  $("more-sheet").setAttribute("aria-hidden", "true");
+  $("more-backdrop").classList.remove("open");
+}
+$("btn-more").addEventListener("click", openMore);
+$("more-cancel").addEventListener("click", closeMore);
+$("more-backdrop").addEventListener("click", closeMore);
 
 // porta la "lente" di vetro sotto la sezione attiva (0.3.1)
 function moveLens(animate = true) {
@@ -1325,7 +1369,10 @@ function renderSectionsList() {
 
     const label = el("span", "label");
     label.append(el("span", null, info.name));
-    if (info.placeholder) label.append(el("small", null, "Segnaposto · in arrivo"));
+    const sub = el("small");
+    sub.append(el("span", "where"));
+    if (info.placeholder) sub.append(" · in arrivo");
+    label.append(sub);
 
     const sw = el("label", "switch");
     const input = document.createElement("input");
@@ -1342,20 +1389,18 @@ function renderSectionsList() {
       const changed = order.join() !== state.sections.map((x) => x.id).join();
       state.sections.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
       if (changed) { renderTabbar(); saveSections(); }
+      markSectionPlaces();
     });
 
     li.append(ico, label, sw, handle);
     ul.append(li);
   }
+  markSectionPlaces();
 }
 
 function toggleSection(id, input) {
   const s = state.sections.find((x) => x.id === id);
   const active = state.sections.filter((x) => x.on).length;
-  if (input.checked && active >= MAX_TABS) {
-    input.checked = false;
-    return toast(`Al massimo ${MAX_TABS} sezioni nella barra`);
-  }
   if (!input.checked && active <= 1) {
     input.checked = true;
     return toast("Serve almeno una sezione nella barra");
@@ -1363,6 +1408,19 @@ function toggleSection(id, input) {
   s.on = input.checked;
   renderTabbar();
   saveSections();
+  markSectionPlaces();
+}
+
+// 0.4.4: sotto ogni sezione attiva, dove si trova (barra o Altre sezioni)
+function markSectionPlaces() {
+  let n = 0;
+  for (const li of $("sections-list").children) {
+    const s = state.sections.find((x) => x.id === li.dataset.id);
+    const where = li.querySelector(".where");
+    if (!where) continue;
+    where.textContent = !s?.on ? "Disattivata" : ++n <= MAX_TABS ? "Nella barra" : "In Altre sezioni";
+    where.classList.toggle("extra", !!s?.on && n > MAX_TABS);
+  }
 }
 
 // Trascinamento con la maniglia ≡: la riga segue il dito e cambia posto.

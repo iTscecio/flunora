@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611122105">
+  <link rel="stylesheet" href="css/style.css?v=202611122126">
 </head>
 <body>
 
@@ -44,6 +44,11 @@
 
   <!-- ===================== APP ===================== -->
   <section id="view-app" hidden>
+
+    <!-- ---------- 0.4.4: ALTRE SEZIONI (accanto all'ingranaggio) ---------- -->
+    <button id="btn-more" class="glass gear more" aria-label="Altre sezioni" hidden>
+      <svg viewBox="0 0 24 24" class="stroke"><rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/></svg>
+    </button>
 
     <!-- ---------- PULSANTE IMPOSTAZIONI (in alto a destra, liquid glass) ---------- -->
     <button id="btn-settings" class="glass gear" aria-label="Impostazioni">
@@ -182,6 +187,24 @@
       </div>
     </main>
 
+    <main id="page-anticipi" class="page" hidden>
+      <header class="page-head"><h1>Anticipi</h1></header>
+      <div class="card placeholder">
+        <span class="ph-ico" style="--c:#af52de"><svg viewBox="0 0 24 24" class="stroke"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span>
+        <h2>In arrivo</h2>
+        <p class="secondary">Qui segnerai i soldi che paghi per altri e che ti verranno restituiti, persona per persona.</p>
+      </div>
+    </main>
+
+    <main id="page-desideri" class="page" hidden>
+      <header class="page-head"><h1>Desideri</h1></header>
+      <div class="card placeholder">
+        <span class="ph-ico" style="--c:#30b0c7"><svg viewBox="0 0 24 24" class="stroke"><rect x="3.5" y="8" width="17" height="4" rx="1"/><path d="M5 12v8h14v-8M12 8v12M12 8c-1.5-3.5-6-3.5-5-.5.5 1.2 2.5.5 5 .5zM12 8c1.5-3.5 6-3.5 5-.5-.5 1.2-2.5.5-5 .5z"/></svg></span>
+        <h2>In arrivo</h2>
+        <p class="secondary">Qui metterai le cose che desideri, con quanto costano e i soldi che metti da parte per ognuna.</p>
+      </div>
+    </main>
+
     <!-- ---------- IMPOSTAZIONI (pannello a schermo intero) ---------- -->
     <div id="settings" class="settings-panel" aria-hidden="true">
       <header class="glass settings-head">
@@ -204,7 +227,7 @@
 
         <h3 class="section-title">Sezioni nella barra</h3>
         <ul id="sections-list" class="card list settings sortable"></ul>
-        <p class="secondary small foot">Da 1 a 4 sezioni. Trascina &equiv; per cambiare l'ordine.</p>
+        <p class="secondary small foot">Le prime 4 sezioni attive stanno nella barra; le altre si aprono dal pulsante a quattro quadratini in alto. Trascina &equiv; per cambiare l'ordine.</p>
 
         <h3 class="section-title">Dati</h3>
         <ul class="card list settings">
@@ -547,6 +570,16 @@
       <button type="button" id="action-cancel" class="action-cancel">Annulla</button>
     </div>
 
+    <!-- ---------- 0.4.4: PANNELLO ALTRE SEZIONI ---------- -->
+    <div id="more-backdrop" class="sheet-backdrop topmost"></div>
+    <div id="more-sheet" class="action-sheet more-sheet" aria-hidden="true" role="dialog" aria-labelledby="more-title">
+      <div class="action-group">
+        <div class="action-head"><strong id="more-title">Altre sezioni</strong><span>Le sezioni attive che non stanno nella barra</span></div>
+        <div id="more-list"></div>
+      </div>
+      <button type="button" id="more-cancel" class="action-cancel">Chiudi</button>
+    </div>
+
     <div id="toast" class="toast" role="status">
       <span id="toast-text"></span>
       <button type="button" id="toast-action" hidden></button>
@@ -554,11 +587,11 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611122105"></script>
-  <script src="js/releases.js?v=202611122105"></script>
-  <script src="js/icons.js?v=202611122105"></script>
-  <script src="js/app.js?v=202611122105"></script>
-  <script src="js/bank-bdp.js?v=202611122105"></script>
-  <script src="js/import.js?v=202611122105"></script>
+  <script src="js/config.js?v=202611122126"></script>
+  <script src="js/releases.js?v=202611122126"></script>
+  <script src="js/icons.js?v=202611122126"></script>
+  <script src="js/app.js?v=202611122126"></script>
+  <script src="js/bank-bdp.js?v=202611122126"></script>
+  <script src="js/import.js?v=202611122126"></script>
 </body>
 </html>
