@@ -2,6 +2,11 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.5.1
+- IMPR-003 Duplica movimento: nel pannello "Modifica movimento" i pulsanti in fondo sono "Duplica" ed "Elimina" (`#sheet-foot`). "Duplica" trasforma il pannello in un movimento nuovo (`state.dupOf`) con tipo, categoria, importo e descrizione dell'originale e la data di oggi; niente Frequenti né Anticipo
+- IMPR-002 Avanzo del mese nei Desideri: carta `#wish-left` sopra l'elenco. Mese precedente: budget (`budgets` del mese o budget mensile) − uscite; se le uscite sono > 0 e l'avanzo ≥ 1 € e c'è almeno un desiderio non completo, propone "Metti da parte" (scelta del desiderio con `actionSheet` se più di uno) o "Non ora". Il pannello "Metti da parte" parte già con l'avanzo (al massimo quanto manca) e ha la scorciatoia "Avanzo di …". Una volta per mese: `localStorage` `flunora.leftoverDone` = "AAAA-MM"
+- IMPR-004 Blocco con Face ID: Impostazioni › Sicurezza. Attivandolo si crea una passkey dell'iPhone (WebAuthn, autenticatore della piattaforma, verifica utente obbligatoria); l'id resta in `localStorage` `flunora.lock`. Schermata `#lock` all'avvio (coperta subito, prima di leggere la sessione) e al ritorno dopo più di 60 secondi in background; "Esci e accedi con la password" toglie il blocco. È un blocco dello schermo di questo dispositivo: nessun dato nuovo su Supabase
+
 ## 0.5.0
 - Nuova sezione Desideri (non più segnaposto): riepilogo "Messi da parte", schede con prezzo, barra di avanzamento, "mancano …", "Entro mese anno: … al mese" se c'è una scadenza, nota e link; "Comprati e rinunciati (n)" a scomparsa; toccando il titolo: Modifica, Riprendi soldi, Rinuncio (o Elimina per quelli chiusi)
 - Ordine di priorità trascinando la maniglia ≡ (con almeno 2 desideri attivi; `attachSort`, salva `sort_order`)

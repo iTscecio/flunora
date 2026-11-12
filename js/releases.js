@@ -5,6 +5,14 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.5.1", date: "13 novembre 2026",
+    items: [
+      "Nuovo: \"Duplica\" nel pannello di un movimento: apre una copia già compilata con la data di oggi, da controllare e salvare (IMPR-003)",
+      "Nei Desideri, a inizio mese: se nel mese prima hai speso meno del budget, Flunora ti propone di mettere da parte quello che è avanzato per un desiderio (IMPR-002)",
+      "Nuovo: blocco con Face ID, in Impostazioni › Sicurezza. Flunora chiede Face ID quando la apri e quando ci torni dopo più di un minuto (IMPR-004)",
+    ],
+  },
+  {
     version: "0.5.0", date: "12 novembre 2026",
     items: [
       "Nuovo: la sezione Desideri, per le cose che vuoi comprare; si attiva in Impostazioni › Sezioni",

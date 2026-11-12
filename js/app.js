@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.5.0";
+const APP_VERSION = "0.5.1";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -111,6 +111,7 @@ let sessionChecked = false;
 
 async function init() {
   $("set-version").textContent = APP_VERSION;
+  if (lockCfg()) { $("lock").hidden = false; document.body.classList.add("is-locked"); } // IMPR-004: niente dati visibili prima di Face ID
   const { data } = await sb.auth.getSession();
   handleSession(data.session);
   sb.auth.onAuthStateChange((_e, session) => handleSession(session));
@@ -121,6 +122,8 @@ function handleSession(session) {
   if (sessionChecked && user?.id === state.user?.id) return;
   sessionChecked = true;
   state.user = user;
+  if (!user) hideLock();
+  else if (lockCfg()) showLock(); // IMPR-004: all'apertura chiede Face ID
   $("view-login").hidden = !!user;
   $("view-app").hidden = !user;
   if (user) startApp();
@@ -153,7 +156,7 @@ $("btn-signup").addEventListener("click", async () => {
 });
 
 $("btn-logout").addEventListener("click", async () => {
-  if (confirm("Vuoi uscire da Flunora?")) await sb.auth.signOut();
+  if (confirm("Vuoi uscire da Flunora?")) { lockOff(); await sb.auth.signOut(); }
 });
 
 function traduciErrore(m) {
@@ -937,7 +940,7 @@ function openSheet(tx) {
   state.editing = tx;
   setMsg($("sheet-msg"), "");
   $("sheet-title").textContent = tx ? "Modifica movimento" : "Nuovo movimento";
-  $("sheet-delete").hidden = !tx;
+  $("sheet-foot").hidden = !tx; // 0.5.1: Duplica ed Elimina solo in modifica
   if (tx) {
     state.categoryId = tx.category_id;
     setKind(tx.kind);
@@ -971,6 +974,7 @@ function openSheet(tx) {
 
 function closeSheet() {
   state.wishBuying = null;
+  state.dupOf = null;
   $("sheet").classList.remove("open");
   $("sheet").setAttribute("aria-hidden", "true");
   $("sheet-backdrop").classList.remove("open");
@@ -1030,7 +1034,7 @@ function freqItems(kind) {
 
 function renderFreq() {
   const box = $("freq-box"), row = $("freq-row");
-  const items = state.editing || state.wishBuying ? [] : freqItems(state.kind);
+  const items = state.editing || state.wishBuying || state.dupOf ? [] : freqItems(state.kind);
   box.hidden = items.length === 0;
   row.replaceChildren(...items.map((it) => {
     const b = el("button", "freq-chip");
@@ -1146,6 +1150,7 @@ async function loadWishes() {
   t.hidden = !closed.length;
   t.textContent = `Comprati e rinunciati (${closed.length}) ${$("wish-closed").hidden ? "›" : "⌄"}`;
   $("wish-closed").replaceChildren(...closed.map(wishCard));
+  loadLeftover(open);
 }
 $("wish-closed-toggle").addEventListener("click", () => {
   $("wish-closed").hidden = !$("wish-closed").hidden;
@@ -1305,10 +1310,10 @@ $("wish-sheet").addEventListener("submit", async (e) => {
 });
 
 // ---------- metti da parte / riprendi ----------
-function openWishMove(w, dir) {
-  state.wishMove = { w, dir };
+function openWishMove(w, dir, leftover = null) {
+  state.wishMove = { w, dir, leftover };
   $("wmove-title").textContent = w.name;
-  $("wmove-amount").value = "";
+  $("wmove-amount").value = leftover ? fmtPlain(leftover.cents) : "";
   setMsg($("wmove-msg"), "");
   renderWishMove();
   $("wmove-sheet").scrollTop = 0;
@@ -1327,8 +1332,10 @@ function renderWishMove() {
   document.querySelectorAll("#wmove-dir button").forEach((b) => b.classList.toggle("on", b.dataset.dir === dir));
   const left = Math.max(0, w.price_cents - w.saved_cents);
   const plan = wishPlan(w);
+  const lo = state.wishMove.leftover;
   const quick = dir === "in"
-    ? [plan && left ? [`${fmt(plan.monthly)} al mese`, Math.min(plan.monthly, left)] : null, left ? [`Tutto quello che manca (${fmt(left)})`, left] : null]
+    ? [lo ? [`Avanzo di ${lo.mese} (${fmt(lo.cents)})`, lo.cents] : null,
+       plan && left ? [`${fmt(plan.monthly)} al mese`, Math.min(plan.monthly, left)] : null, left ? [`Tutto quello che manca (${fmt(left)})`, left] : null]
     : [w.saved_cents ? [`Tutto (${fmt(w.saved_cents)})`, w.saved_cents] : null];
   $("wmove-quick").replaceChildren(...quick.filter(Boolean).map(([label, cents]) => {
     const b = el("button", "chip", label);
@@ -1356,8 +1363,57 @@ $("wmove-sheet").addEventListener("submit", async (e) => {
   const { error } = await sb.from("wishes").update({ saved_cents: saved }).eq("id", w.id);
   if (error) return setMsg(msg, "Errore: " + traduciErrore(error.message), true);
   closeWishMove();
+  if (dir === "in" && state.wishMove.leftover) leftoverDone(state.wishMove.leftover.key); // IMPR-002
   toast(dir === "in" ? `${fmt(cents)} messi da parte per ${w.name}` : `${fmt(cents)} tornati disponibili`);
   loadWishes();
+});
+
+// ---------- IMPR-002 (0.5.1): avanzo del mese nei Desideri ----------
+// Nel mese nuovo, se nel mese prima hai speso meno del budget, propone di mettere
+// da parte quello che è avanzato. Si propone una volta per mese (fatto o "Non ora").
+const leftoverSeen = () => { try { return localStorage.getItem("flunora.leftoverDone") || ""; } catch { return ""; } };
+function leftoverDone(key) {
+  try { localStorage.setItem("flunora.leftoverDone", key); } catch {}
+  $("wish-left").hidden = true;
+}
+
+async function loadLeftover(open) {
+  const card = $("wish-left");
+  const prev = addMonths(firstOfMonth(new Date()), -1);
+  const key = monthKey(prev);
+  const missing = open.filter((w) => w.price_cents > w.saved_cents);
+  if (!missing.length || leftoverSeen() >= key) { card.hidden = true; return; }
+  const [bRes, tRes] = await Promise.all([
+    sb.from("budgets").select("amount_cents").eq("month", isoDate(prev)).maybeSingle(),
+    sb.from("transactions").select("amount_cents").eq("kind", "uscita")
+      .gte("date", isoDate(prev)).lt("date", isoDate(addMonths(prev, 1))),
+  ]);
+  const budget = (bRes.error ? null : bRes.data?.amount_cents) ?? defaultBudget();
+  if (tRes.error || !budget) { card.hidden = true; return; }
+  const spent = tRes.data.reduce((a, t) => a + t.amount_cents, 0);
+  const left = budget - spent;
+  if (!spent || left < 100) { card.hidden = true; return; } // mese vuoto o niente avanzo
+  const mese = MESI[prev.getMonth()];
+  state.leftover = { key, mese, cents: left, wishes: missing };
+  $("wish-left-title").textContent = `Del budget di ${mese} ti sono avanzati ${fmt(left)}`;
+  $("wish-left-sub").textContent = `Hai speso ${fmt(spent)} su ${fmt(budget)}. Vuoi metterli da parte per un desiderio?`;
+  card.hidden = false;
+}
+
+$("wish-left-put").addEventListener("click", () => {
+  const lo = state.leftover;
+  if (!lo) return;
+  const go = (w) => openWishMove(w, "in", { key: lo.key, mese: lo.mese, cents: Math.min(lo.cents, w.price_cents - w.saved_cents) });
+  if (lo.wishes.length === 1) return go(lo.wishes[0]);
+  actionSheet({
+    title: "Per quale desiderio?",
+    message: `Avanzo di ${lo.mese}: ${fmt(lo.cents)}`,
+    actions: lo.wishes.map((w) => ({ label: `${w.name} · mancano ${fmt(w.price_cents - w.saved_cents)}`, onClick: () => go(w) })),
+  });
+});
+$("wish-left-skip").addEventListener("click", () => {
+  leftoverDone(state.leftover?.key || monthKey(addMonths(firstOfMonth(new Date()), -1)));
+  toast("Va bene: te lo ripropongo il mese prossimo");
 });
 
 // =========================================================
@@ -1656,6 +1712,23 @@ $("sheet").addEventListener("submit", async (e) => {
   }
 });
 
+// IMPR-003 (0.5.1): Duplica — il pannello diventa un movimento nuovo già compilato, con la data di oggi
+$("sheet-dup").addEventListener("click", () => {
+  const tx = state.editing;
+  if (!tx) return;
+  openSheet(null);
+  state.dupOf = tx.id;
+  state.categoryId = tx.category_id;
+  setKind(tx.kind);
+  $("f-amount").value = fmtPlain(tx.amount_cents);
+  $("f-desc").value = tx.description || "";
+  $("f-date").value = isoDate(new Date());
+  $("sheet-title").textContent = "Duplica movimento";
+  $("freq-box").hidden = true;
+  $("kind-anticipo").hidden = true;
+  setMsg($("sheet-msg"), "È una copia con la data di oggi: controlla e salva.");
+});
+
 $("sheet-delete").addEventListener("click", async () => {
   const tx = state.editing;
   if (!tx) return;
@@ -1875,6 +1948,7 @@ function openSettings() {
   $("set-opening").textContent = openingLabel();
   $("set-backup").textContent = lastBackupText();
   renderFreqReset();
+  renderLock();
   $("settings").scrollTop = 0;
   $("settings").classList.add("open");
   $("settings").setAttribute("aria-hidden", "false");
@@ -3455,6 +3529,94 @@ document.querySelectorAll(".sheet").forEach(attachSheetDrag);
 // niente zoom con due dita (Safari) — resta lo Zoom di sistema in Accessibilità
 document.addEventListener("gesturestart", (e) => e.preventDefault(), { passive: false });
 document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
+
+// =========================================================
+// IMPR-004 (0.5.1) — BLOCCO CON FACE ID
+// Una passkey dell'iPhone (WebAuthn) fa da chiave: Flunora chiede Face ID all'apertura
+// e quando torni dopo più di LOCK_AFTER_MS. È un blocco dello schermo su questo
+// dispositivo: i dati restano protetti come prima dall'accesso a Supabase.
+// =========================================================
+const LOCK_KEY = "flunora.lock", LOCK_AFTER_MS = 60 * 1000;
+function lockCfg() { try { return JSON.parse(localStorage.getItem(LOCK_KEY) || "null"); } catch { return null; } }
+function lockOff() { try { localStorage.removeItem(LOCK_KEY); } catch {} hideLock(); }
+const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const fromB64 = (str) => Uint8Array.from(atob(str), (c) => c.charCodeAt(0));
+const randomBytes = (n) => crypto.getRandomValues(new Uint8Array(n));
+
+async function lockSupported() {
+  try { return !!window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); }
+  catch { return false; }
+}
+
+async function renderLock() {
+  const t = $("lock-toggle");
+  t.checked = !!lockCfg();
+  const ok = await lockSupported();
+  t.disabled = !ok && !t.checked;
+  $("lock-foot").textContent = ok || t.checked
+    ? "Flunora chiede Face ID quando la apri e quando ci torni dopo più di un minuto. Vale solo per questo iPhone."
+    : "Su questo dispositivo Face ID non è disponibile per Flunora.";
+}
+
+$("lock-toggle").addEventListener("change", async (e) => {
+  const t = e.target;
+  if (!t.checked) { lockOff(); toast("Blocco con Face ID disattivato"); return; }
+  t.checked = false;
+  try {
+    const cred = await navigator.credentials.create({ publicKey: {
+      rp: { name: "Flunora", id: location.hostname },
+      user: { id: randomBytes(16), name: state.user?.email || "Flunora", displayName: "Flunora" },
+      challenge: randomBytes(32),
+      pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+      authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },
+      timeout: 60000,
+    } });
+    localStorage.setItem(LOCK_KEY, JSON.stringify({ id: toB64(cred.rawId), on: new Date().toISOString() }));
+    t.checked = true;
+    toast("Blocco con Face ID attivo");
+  } catch (err) {
+    toast(err?.name === "NotAllowedError" ? "Face ID annullato: blocco non attivato" : "Face ID non disponibile: " + (err?.message || err));
+  }
+});
+
+let lockBusy = false;
+function showLock() {
+  $("lock").hidden = false;
+  document.body.classList.add("is-locked");
+  setMsg($("lock-msg"), "");
+  unlock();
+}
+function hideLock() {
+  $("lock").hidden = true;
+  document.body.classList.remove("is-locked");
+}
+async function unlock() {
+  const cfg = lockCfg();
+  if (!cfg) return hideLock();
+  if (lockBusy) return;
+  lockBusy = true;
+  try {
+    await navigator.credentials.get({ publicKey: {
+      challenge: randomBytes(32),
+      rpId: location.hostname,
+      allowCredentials: [{ type: "public-key", id: fromB64(cfg.id) }],
+      userVerification: "required",
+      timeout: 60000,
+    } });
+    hideLock();
+  } catch (err) {
+    // la prima richiesta automatica può non partire senza un tocco: resta il pulsante
+    setMsg($("lock-msg"), err?.name === "NotAllowedError" ? "" : "Face ID non riuscito. Riprova.", true);
+  } finally { lockBusy = false; }
+}
+$("lock-open").addEventListener("click", unlock);
+$("lock-out").addEventListener("click", async () => { lockOff(); await sb.auth.signOut(); });
+
+let hiddenAt = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (state.user && lockCfg() && hiddenAt && Date.now() - hiddenAt > LOCK_AFTER_MS) showLock();
+});
 
 init();
 
