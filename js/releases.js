@@ -5,6 +5,15 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.4.3", date: "12 novembre 2026",
+    items: [
+      "Nuovo: nel pannello + compare la fila \"Frequenti\", con le spese che registri più spesso; un tocco compila categoria, descrizione e, se è sempre lo stesso, l'importo",
+      "Le scorciatoie nascono da sole: una spesa con la stessa descrizione e categoria registrata almeno 3 volte negli ultimi 90 giorni",
+      "Se l'importo cambia ogni volta (per esempio benzina o spesa), la scorciatoia lascia l'importo vuoto e apre la tastiera",
+      "Tenendo premuta una scorciatoia puoi rimuoverla; in Impostazioni › Dati puoi farle tornare tutte",
+    ],
+  },
+  {
     version: "0.4.2", date: "11 novembre 2026",
     items: [
       "Nuovo: nei dettagli della carta Categorie una freccia ti dice se in una categoria stai spendendo più o meno del solito",

@@ -1055,3 +1055,31 @@ button:active:not(:disabled), .tap:active, .chip:active, .leg button:active, .op
 .brow .st:has(.cmp) { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 8px; }
 .brow .st .cmp { margin-left: auto; }
 .brow .st .cmp .sep { display: none; }
+
+/* =========================================================
+   0.4.3 — FREQUENTI nel pannello +
+   ========================================================= */
+.freq { flex: none; display: flex; flex-direction: column; gap: 8px; }
+.freq .section-title { margin: 0; }
+/* la fila arriva ai bordi del pannello e scorre senza barra */
+.freq-wrap { position: relative; margin: 0 -16px; }
+.freq-wrap::after {
+  content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 24px; pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--bg));
+}
+.freq-row {
+  display: flex; gap: 8px; overflow-x: auto; padding: 2px 16px; scroll-padding: 0 16px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity; overscroll-behavior-x: contain;
+}
+.freq-row::-webkit-scrollbar { display: none; }
+.freq-chip {
+  flex: none; scroll-snap-align: start; display: inline-flex; align-items: center; gap: 7px;
+  border: 1.5px solid transparent; background: var(--card); color: var(--text); border-radius: 999px;
+  padding: 6px 14px 6px 8px; font: inherit; font-size: 15px; cursor: pointer; max-width: 260px;
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: pan-x;
+  transition: transform .15s;
+}
+.freq-chip:active { transform: scale(.96); }
+.freq-chip .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.freq-chip .am { color: var(--secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.freq-chip.on { border-color: var(--accent); }

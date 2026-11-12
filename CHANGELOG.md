@@ -2,6 +2,17 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.4.3
+- Pannello + (solo "Nuovo movimento"): fila "Frequenti" (`#freq-box`, `#freq-row`) sotto Uscita / Entrata / Investimento, una fila per tipo
+- Scorciatoia = stesso tipo, categoria e descrizione (senza maiuscole/minuscole) registrata almeno 3 volte negli ultimi 90 giorni (`FREQ_MIN`, `FREQ_DAYS`); al massimo 6 (`FREQ_MAX`), le più usate prima, a parità la più recente; escluse le categorie archiviate
+- Movimenti importati: contano solo se la descrizione è lunga al massimo 25 caratteri (cioè rinominata), così le descrizioni della banca non diventano scorciatoie
+- Un tocco compila categoria e descrizione; l'importo solo se è sempre uguale, altrimenti resta vuoto e si apre la tastiera; la data resta quella proposta; il salvataggio resta manuale
+- Tenendo premuto (500 ms, o clic destro sul PC) si apre "Rimuovi dai frequenti"; le scorciatoie rimosse sono salvate sul dispositivo (localStorage `flunora.freqHidden`); in Impostazioni › Dati compare "Mostra le scorciatoie nascoste" quando ce n'è almeno una
+- La fila scorre in orizzontale senza barra di scorrimento, con una sfumatura sul bordo destro
+- I movimenti degli ultimi 90 giorni si leggono a ogni apertura del pannello (solo tipo, categoria, importo, descrizione, data); se la lettura fallisce il pannello funziona come prima
+- Impostazioni: "Movimenti periodici" ora indica la 0.6, come nella roadmap
+- Nessuno script Supabase
+
 ## 0.4.2
 - Carta Categorie, dettagli: accanto a ogni categoria "↑ N% sul solito" (arancione) o "↓ N% sul solito" (verde)
 - "Il solito" = media delle spese per categoria nei 3 mesi precedenti (`USUAL_MONTHS`); contano solo i mesi con almeno una spesa, e si divide per quel numero di mesi

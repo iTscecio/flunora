@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.4.2";
+const APP_VERSION = "0.4.3";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -894,6 +894,7 @@ function setKind(kind) {
     state.categoryId = cats.some((c) => c.id === last) ? last : cats[0]?.id || null;
   }
   renderChips();
+  renderFreq();
 }
 
 // categorie selezionabili: quelle attive, più quella del movimento in modifica se archiviata
@@ -948,6 +949,8 @@ function openSheet(tx) {
   $("sheet").setAttribute("aria-hidden", "false");
   $("sheet-backdrop").classList.add("open");
   $("sheet").scrollTop = 0;
+  $("freq-row").scrollLeft = 0;
+  if (!tx) loadFreq();
   // 0.2.1: niente cursore automatico, la tastiera si apre solo toccando un campo
 }
 
@@ -958,6 +961,127 @@ function closeSheet() {
   document.activeElement?.blur();
   state.editing = null;
 }
+
+// =========================================================
+// 0.4.3 — FREQUENTI: scorciatoie nel pannello + per le spese che ripeti
+// Una scorciatoia = stessa descrizione e categoria registrata almeno 3 volte
+// negli ultimi 90 giorni. Gli importati contano solo se la descrizione è breve
+// (cioè rinominata): quelle lunghe della banca non diventano scorciatoie.
+// =========================================================
+const FREQ_DAYS = 90, FREQ_MIN = 3, FREQ_MAX = 6, FREQ_IMPORT_MAXLEN = 25;
+let freqHiddenMem = null;
+function freqHidden() {
+  if (freqHiddenMem) return freqHiddenMem;
+  try { freqHiddenMem = new Set(JSON.parse(localStorage.getItem("flunora.freqHidden") || "[]")); }
+  catch { freqHiddenMem = new Set(); }
+  return freqHiddenMem;
+}
+function saveFreqHidden() {
+  try { localStorage.setItem("flunora.freqHidden", JSON.stringify([...freqHidden()])); } catch {}
+}
+
+async function loadFreq() {
+  renderFreq(); // subito con i dati già letti, poi aggiornati
+  const from = new Date(); from.setDate(from.getDate() - FREQ_DAYS);
+  const { data, error } = await sb.from("transactions")
+    .select("kind,category_id,amount_cents,description,import_key,date").gte("date", isoDate(from));
+  if (error) return; // senza scorciatoie il pannello funziona come prima
+  state.freqData = data || [];
+  if ($("sheet").classList.contains("open")) renderFreq();
+}
+
+function freqItems(kind) {
+  const hidden = freqHidden(), groups = new Map();
+  for (const t of state.freqData || []) {
+    if (t.kind !== kind) continue;
+    const cat = catById(t.category_id);
+    if (!cat || cat.archived) continue;
+    const desc = (t.description || "").trim();
+    if (t.import_key && desc.length > FREQ_IMPORT_MAXLEN) continue;
+    const key = `${kind}|${cat.id}|${desc.toLowerCase()}`;
+    let g = groups.get(key);
+    if (!g) groups.set(key, g = { key, cat, desc, n: 0, amounts: new Set(), last: "" });
+    g.n++;
+    g.amounts.add(t.amount_cents);
+    if (t.date > g.last) g.last = t.date;
+  }
+  return [...groups.values()]
+    .filter((g) => g.n >= FREQ_MIN && !hidden.has(g.key))
+    .sort((a, b) => b.n - a.n || b.last.localeCompare(a.last))
+    .slice(0, FREQ_MAX)
+    .map((g) => ({ ...g, amount: g.amounts.size === 1 ? [...g.amounts][0] : null }));
+}
+
+function renderFreq() {
+  const box = $("freq-box"), row = $("freq-row");
+  const items = state.editing ? [] : freqItems(state.kind);
+  box.hidden = items.length === 0;
+  row.replaceChildren(...items.map((it) => {
+    const b = el("button", "freq-chip");
+    b.type = "button";
+    const label = it.desc || it.cat.name;
+    b.append(catIcon(it.cat, "sm"), el("span", "nm", label),
+      el("span", "am", it.amount != null ? fmt(it.amount) : "importo?"));
+    b.setAttribute("aria-label", `${label}, ${it.cat.name}` + (it.amount != null ? `, ${fmt(it.amount)}` : "") +
+      ". Tieni premuto per rimuoverla");
+    let timer = null, fired = false, x0 = 0, y0 = 0;
+    const cancel = () => { clearTimeout(timer); timer = null; };
+    b.addEventListener("pointerdown", (e) => {
+      fired = false; x0 = e.clientX; y0 = e.clientY;
+      timer = setTimeout(() => { fired = true; timer = null; freqMenu(it, label); }, 500);
+    });
+    b.addEventListener("pointermove", (e) => { if (timer && Math.hypot(e.clientX - x0, e.clientY - y0) > 10) cancel(); });
+    b.addEventListener("pointerup", cancel);
+    b.addEventListener("pointercancel", cancel);
+    b.addEventListener("pointerleave", cancel);
+    b.addEventListener("contextmenu", (e) => { e.preventDefault(); if (!fired) { cancel(); fired = true; freqMenu(it, label); } });
+    b.addEventListener("click", () => {
+      if (fired) { fired = false; return; }
+      useFreq(it, b);
+    });
+    return b;
+  }));
+}
+
+function useFreq(it, btn) {
+  state.categoryId = it.cat.id;
+  renderChips();
+  $("f-desc").value = it.desc;
+  $("freq-row").querySelectorAll(".freq-chip").forEach((c) => c.classList.toggle("on", c === btn));
+  setMsg($("sheet-msg"), "");
+  if (it.amount != null) {
+    $("f-amount").value = (it.amount / 100).toFixed(2).replace(".", ",");
+    document.activeElement?.blur();
+  } else {
+    $("f-amount").value = "";
+    $("f-amount").focus(); // apre la tastiera per l'importo
+  }
+}
+
+function freqMenu(it, label) {
+  actionSheet({
+    title: label,
+    message: "Non comparirà più tra i Frequenti. Puoi farla tornare da Impostazioni › Dati.",
+    actions: [{ label: "Rimuovi dai frequenti", danger: true, onClick: () => {
+      freqHidden().add(it.key);
+      saveFreqHidden();
+      renderFreq();
+      toast("Scorciatoia rimossa");
+    } }],
+  });
+}
+
+function renderFreqReset() {
+  const n = freqHidden().size;
+  $("freq-reset").hidden = n === 0;
+  $("freq-reset-n").textContent = n ? String(n) : "";
+}
+$("freq-reset").addEventListener("click", () => {
+  freqHidden().clear();
+  saveFreqHidden();
+  renderFreqReset();
+  toast("Scorciatoie di nuovo visibili");
+});
 
 $("sheet").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -1170,6 +1294,7 @@ function openSettings() {
   $("set-budget").textContent = defaultBudget() ? fmt(defaultBudget()) : "Non impostato";
   $("set-opening").textContent = openingLabel();
   $("set-backup").textContent = lastBackupText();
+  renderFreqReset();
   $("settings").scrollTop = 0;
   $("settings").classList.add("open");
   $("settings").setAttribute("aria-hidden", "false");
