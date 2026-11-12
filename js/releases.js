@@ -5,6 +5,16 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.4.6", date: "12 novembre 2026",
+    items: [
+      "Nuovo: importando l'estratto conto, un bonifico in arrivo con l'importo di una quota aperta viene proposto come restituzione di un anticipo; se confermi, la quota si chiude da sola e non conta come entrata",
+      "Il pagamento di un anticipo già segnato (stesso totale, entro 3 giorni) finisce tra gli ignorati con la nota \"Già negli Anticipi\", così non conta due volte",
+      "Una restituzione già segnata a mano come \"Restituito sul conto\" non viene importata di nuovo",
+      "Toccando + mentre sei nella sezione Anticipi, il pannello si apre già su \"Anticipo\"; dalle altre pagine parte come sempre (IMPR-001)",
+      "Risolto un bug per cui con il pannello + aperto si poteva scorrere la pagina sotto, Dashboard o Mesi; ora resta ferma con tutti i pannelli e i menu (bug #007)",
+    ],
+  },
+  {
     version: "0.4.5", date: "12 novembre 2026",
     items: [
       "Nuovo: la sezione Anticipi, per i soldi che paghi per altri e che ti verranno restituiti; si attiva in Impostazioni › Sezioni",

@@ -2,6 +2,17 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.4.6
+- Import dell'estratto conto collegato agli anticipi (`buildItems` legge `advances` e `advance_shares`; se mancano si va avanti come prima):
+  - uscita con lo stesso importo del totale di un anticipo e data entro 3 giorni → "dup", nota "Già negli Anticipi: …"
+  - entrata con lo stesso importo di una quota restituita sul conto entro 7 giorni → "dup", nota "Già segnata come restituzione di …"
+  - entrata con lo stesso importo di una quota aperta (anticipo con data precedente o uguale) → "Dubbi" con "Restituzione di …? ›"; nel menu "Sì, Persona · Anticipo" (fino a 4 quote) oppure una categoria per importarla come entrata
+  - nuovo stato "adv" (nel gruppo Nuovi): non diventa un movimento; all'importazione la quota passa a "conto" con la data dell'estratto conto; il riepilogo finale conta "Restituzioni di anticipi"
+  - se ci sono solo restituzioni il pulsante è "Conferma le restituzioni" e non si crea un'importazione (niente "Annulla questa importazione")
+- IMPR-001: `openSheet` sceglie "Anticipo" se il pannello si apre dalla sezione Anticipi; da un'altra pagina, se l'ultimo tipo era "Anticipo", torna a "Uscita"
+- Risolto un bug per cui con il pannello + aperto si poteva scorrere la pagina sotto (bug #007). Con un pannello, un menu o le impostazioni aperti (`.sheet`, `.action-sheet`, `.settings-panel` con `.open`) il body va in `position: fixed` alla posizione attuale e torna lì alla chiusura (`syncScrollLock`, osservando le classi); `overscroll-behavior: contain` sui pannelli
+- Nessuno script Supabase
+
 ## 0.4.5
 - Nuova sezione Anticipi (non più segnaposto), icona con due mani: riepilogo "Da ricevere", anticipi aperti con le quote per persona, "Chiusi (n)" a scomparsa; toccando il titolo di un anticipo si può eliminarlo
 - Pannello +: quarto tipo "Anticipo" (solo per movimenti nuovi e con la sezione Anticipi attiva). L'importo grande è il totale pagato; "La tua parte" (0 se non c'è); "Chi deve restituire" con nome e quota, divisa in parti uguali tra le quote non scritte a mano; controllo che quote + tua parte = totale; descrizione obbligatoria; la categoria vale per la tua parte e per le quote non restituite

@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.4.5";
+const APP_VERSION = "0.4.6";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -958,6 +958,12 @@ function openSheet(tx) {
   // 0.4.5: "Anticipo" solo per i movimenti nuovi e con la sezione Anticipi attiva
   $("kind-anticipo").hidden = !!tx || !state.sections.some((x) => x.id === "anticipi" && x.on);
   if ($("kind-anticipo").hidden && state.kind === "anticipo") setKind("uscita");
+  // IMPR-001 (0.4.6): dalla sezione Anticipi il pannello parte già da "Anticipo";
+  // dalle altre pagine un anticipo non resta scelto
+  if (!tx && !$("kind-anticipo").hidden) {
+    if (state.page === "anticipi") setKind("anticipo");
+    else if (state.kind === "anticipo") setKind("uscita");
+  }
   resetAdvFields();
   // 0.2.1: niente cursore automatico, la tastiera si apre solo toccando un campo
 }
@@ -3173,3 +3179,31 @@ document.addEventListener("gesturestart", (e) => e.preventDefault(), { passive: 
 document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
 
 init();
+
+// =========================================================
+// 0.4.6 — bug #007: con un pannello aperto (pannello +, menu, impostazioni…)
+// la pagina sotto resta ferma; scorre solo il pannello.
+// Su iPhone "overflow: hidden" non basta: la pagina si blocca in posizione fissa
+// e alla chiusura torna esattamente dove era.
+// =========================================================
+const OVERLAYS = ".sheet, .action-sheet, .settings-panel";
+let lockedY = null;
+function syncScrollLock() {
+  const open = !!document.querySelector(OVERLAYS.split(", ").map((s) => s + ".open").join(", "));
+  const body = document.body;
+  if (open && lockedY === null) {
+    lockedY = window.scrollY;
+    state.freezeBar = true;                  // il blocco non deve nascondere o mostrare la barra
+    body.style.top = `-${lockedY}px`;
+    body.classList.add("scroll-locked");
+  } else if (!open && lockedY !== null) {
+    const y = lockedY;
+    lockedY = null;
+    body.classList.remove("scroll-locked");
+    body.style.top = "";
+    window.scrollTo(0, y);
+    lastScrollY = window.scrollY;
+    requestAnimationFrame(() => { state.freezeBar = false; });
+  }
+}
+new MutationObserver(syncScrollLock).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["class"] });

@@ -1157,3 +1157,13 @@ button:active:not(:disabled), .tap:active, .chip:active, .leg button:active, .op
 }
 .tab.alert::after { top: 6px; right: calc(50% - 18px); }
 .gear.more.alert::after { top: 6px; right: 6px; }
+
+/* =========================================================
+   0.4.6 — IMPORT E ANTICIPI · PAGINA FERMA SOTTO I PANNELLI (bug #007)
+   ========================================================= */
+.imp-chip.adv { background: color-mix(in srgb, #af52de 16%, transparent); color: #8e3fb8; padding-left: 9px; font-weight: 500; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .imp-chip.adv { color: #d69cf2; } }
+:root[data-theme="dark"] .imp-chip.adv { color: #d69cf2; }
+/* bug #007: con un pannello aperto la pagina sotto non scorre */
+body.scroll-locked { position: fixed; left: 0; right: 0; overflow: hidden; }
+.sheet, .action-group, .sub-panel { overscroll-behavior: contain; }

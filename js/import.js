@@ -230,6 +230,18 @@ async function buildItems(res) {
   const fees = findCat("uscita", /^commissioni$/i);
   const salary = findCat("entrata", /stipendio/i);
 
+  // 0.4.6: anticipi (se lo script 0.4.5 non è stato eseguito, si va avanti senza)
+  let advances = [], shares = [];
+  {
+    const [a, q] = await Promise.all([
+      sb.from("advances").select("id, date, description, total_cents, own_cents"),
+      sb.from("advance_shares").select("id, advance_id, person, amount_cents, status, closed_on"),
+    ]);
+    if (!a.error && !q.error) { advances = a.data; shares = q.data; }
+  }
+  const advById = new Map(advances.map((a) => [a.id, a]));
+  const usedAdv = new Set(), usedShare = new Set();
+
   for (const it of items) {
     if (canoni.has(it.i)) { it.status = "ign"; it.note = "Canone +/− nello stesso giorno: si annullano"; continue; }
     if (it.ignore) { it.status = "ign"; it.note = it.reason; continue; }
@@ -243,6 +255,34 @@ async function buildItems(res) {
       it.note = `Già presente: ${twin.description || catById(twin.category_id)?.name || "movimento"} del ${shortDate(twin.date)}`;
       it.twinOf = twin.id;
       continue;
+    }
+    // 0.4.6: pagamento di un anticipo già segnato? stesso totale, data entro 3 giorni
+    if (it.kind === "uscita") {
+      const adv = advances.find((a) => !usedAdv.has(a.id) && a.total_cents === it.amount && daysBetween(a.date, it.date) <= 3);
+      if (adv) {
+        usedAdv.add(adv.id);
+        it.status = "dup";
+        it.note = `Già negli Anticipi: ${adv.description}`;
+        continue;
+      }
+    }
+    // 0.4.6: restituzione di una quota? stesso importo, dopo la data dell'anticipo
+    if (it.kind === "entrata") {
+      const fit = (q) => !usedShare.has(q.id) && q.amount_cents === it.amount && advById.get(q.advance_id)?.date <= it.date;
+      // già segnata a mano come "Restituito sul conto" entro 7 giorni: è un doppione
+      const done = shares.find((q) => fit(q) && q.status === "conto" && daysBetween(q.closed_on, it.date) <= 7);
+      if (done) {
+        usedShare.add(done.id);
+        it.status = "dup";
+        it.note = `Già segnata come restituzione di ${done.person}`;
+        continue;
+      }
+      const open = shares.filter((q) => fit(q) && q.status === "aperta");
+      if (open.length) {
+        it.status = "ask";
+        it.advOptions = open.slice(0, 4).map((q) => ({ share: q, adv: advById.get(q.advance_id) }));
+        continue;
+      }
     }
     // categoria proposta
     let cat = null, weak = false;
@@ -383,7 +423,8 @@ function setFoot(label, note, onClick, disabled = false) {
 
 // ---------- 3. revisione ----------
 const TABS = [["all", "Tutti"], ["ask", "Dubbi"], ["new", "Nuovi"], ["ign", "Ignorati"]];
-const inTab = (it, tab) => tab === "all" || (tab === "ign" ? it.status === "ign" || it.status === "dup" : it.status === tab);
+const inTab = (it, tab) => tab === "all" || (tab === "ign" ? it.status === "ign" || it.status === "dup"
+  : tab === "new" ? it.status === "new" || it.status === "adv" : it.status === tab);
 
 function renderReview() {
   $("imp-title").textContent = "Rivedi";
@@ -410,10 +451,12 @@ function renderReview() {
   }
   if (body.length === 2) body.push(el("p", "secondary imp-empty", "Nessun movimento qui."));
   $("imp-body").replaceChildren(...body);
-  const n = countBy("new"), ask = countBy("ask");
-  setFoot(n ? `Importa ${n} ${n === 1 ? "movimento" : "movimenti"}` : "Nessun movimento da importare",
-    ask ? `${ask === 1 ? "Il movimento da confermare resta fuori" : `I ${ask} da confermare restano fuori`} finché non scegli la categoria` : "",
-    doImport, n === 0);
+  const n = countBy("new"), ask = countBy("ask"), back = countBy("adv");
+  const notes = [];
+  if (back) notes.push(`${back === 1 ? "1 restituzione chiude la sua quota" : `${back} restituzioni chiudono le loro quote`} negli Anticipi`);
+  if (ask) notes.push(`${ask === 1 ? "Il movimento da confermare resta fuori" : `I ${ask} da confermare restano fuori`} finché non scegli la categoria`);
+  setFoot(n ? `Importa ${n} ${n === 1 ? "movimento" : "movimenti"}` : back ? "Conferma le restituzioni" : "Nessun movimento da importare",
+    notes.join(". "), doImport, n + back === 0);
 }
 
 function catLabel(id) {
@@ -427,7 +470,14 @@ function itemRow(it) {
   t.append(el("b", null, it.title),
     el("small", null, [shortDate(it.date), it.via, it.kind === "entrata" ? "entrata" : ""].filter(Boolean).join(" · ")));
   const chip = el("span", "imp-chip");
-  if (it.status === "new") {
+  if (it.status === "adv") {
+    chip.classList.add("adv");
+    chip.textContent = `Restituzione di ${it.advShare.person} · ${it.advDesc}`;
+  } else if (it.status === "ask" && it.advOptions) {
+    chip.classList.add("ask");
+    const o = it.advOptions[0];
+    chip.textContent = it.advOptions.length === 1 ? `Restituzione di ${o.share.person}? ›` : "Restituzione di un anticipo? ›";
+  } else if (it.status === "new") {
     const c = catLabel(it.categoryId);
     chip.append(catIcon(c, "sm"), document.createTextNode(c?.name || "?"));
     if (c?.fresh) chip.append(el("span", "fresh", "nuova"));
@@ -448,6 +498,11 @@ function itemRow(it) {
 function pickCategory(it) {
   const cats = state.categories.filter((c) => c.kind === it.kind && !c.archived);
   const actions = [];
+  // 0.4.6: collega l'entrata a una quota da restituire (non diventa un movimento)
+  for (const o of it.advOptions || []) {
+    if (it.status === "adv" && it.advShare?.id === o.share.id) continue;
+    actions.push({ label: `Sì, ${o.share.person} · ${o.adv?.description || "anticipo"}`, onClick: () => setItemAdv(it, o) });
+  }
   if (it.status === "ask" && it.suggest) {
     const s = catLabel(it.suggest);
     actions.push({ label: `Sì, ${s.name}`, category: s, onClick: () => setItemCat(it, it.suggest) });
@@ -457,10 +512,18 @@ function pickCategory(it) {
     actions.push({ label: "Commissioni (nuova)", category: catLabel(IMP_FEES), onClick: () => setItemCat(it, IMP_FEES) });
   }
   if (it.status === "new" || it.status === "ask") actions.push({ label: "Non importare", danger: true, onClick: () => skipItem(it) });
-  const msg = it.status === "dup" ? `${it.note}. Scegli una categoria solo se vuoi importarlo comunque.`
+  const msg = it.advOptions && it.status !== "adv"
+    ? "È la restituzione di un anticipo? Se sì, Flunora chiude la quota e non la conta come entrata."
+    : it.status === "adv" ? "Scegli una categoria per importarlo invece come entrata." : it.status === "dup" ? `${it.note}. Scegli una categoria solo se vuoi importarlo comunque.`
     : it.status === "ign" ? `${it.note}. Scegli una categoria solo se vuoi importarlo comunque.`
     : it.merchantKey ? "Flunora userà questa categoria anche le prossime volte per questo negozio." : "";
   actionSheet({ title: `${it.title} · ${(it.kind === "entrata" ? "+ " : "− ") + fmt(it.amount)}`, message: msg, actions });
+}
+
+function setItemAdv(it, o) {
+  it.status = "adv"; it.advShare = o.share; it.advDesc = o.adv?.description || "anticipo";
+  it.categoryId = null; it.suggest = null; it.remember = false;
+  renderReview();
 }
 
 function setItemCat(it, catId) {
@@ -485,7 +548,8 @@ function skipItem(it) {
 // ---------- 4. importazione ----------
 async function doImport() {
   const chosen = imp.items.filter((it) => it.status === "new");
-  if (!chosen.length || imp.busy) return;
+  const backs = imp.items.filter((it) => it.status === "adv"); // 0.4.6
+  if ((!chosen.length && !backs.length) || imp.busy) return;
   imp.busy = true;
   $("imp-go").disabled = true;
   impLoading("Salvo una copia dei tuoi dati e importo…");
@@ -519,10 +583,20 @@ async function doImport() {
       date: it.date, amount_cents: it.amount, kind: it.kind, category_id: it.categoryId,
       description: it.description || it.title, import_key: it.key,
     }));
-    const { data, error } = await sb.rpc("import_transactions", { meta, rows });
-    if (error) throw error;
+    let data = { added: 0, skipped: 0, batch_id: null };
+    if (rows.length) {
+      const r = await sb.rpc("import_transactions", { meta, rows });
+      if (r.error) throw r.error;
+      data = r.data;
+    }
+    // 0.4.6: quote restituite sul conto, con la data dell'estratto conto
+    for (const it of backs) {
+      const { error } = await sb.from("advance_shares").update({ status: "conto", closed_on: it.date })
+        .eq("id", it.advShare.id).eq("status", "aperta");
+      if (error) throw error;
+    }
     imp.batch = data;
-    renderDone(chosen, data, rules.size);
+    renderDone(chosen, data, rules.size, backs.length);
     renderImportHistory();
     refreshPagesAfterImport();
   } catch (err) {
@@ -532,7 +606,7 @@ async function doImport() {
   }
 }
 
-function renderDone(chosen, result, nRules) {
+function renderDone(chosen, result, nRules, nBacks = 0) {
   $("imp-title").textContent = "Fatto";
   $("imp-cancel").style.visibility = "hidden";   // resta lo spazio: "Fine" sta a destra
   $("imp-done").hidden = false;
@@ -544,10 +618,12 @@ function renderDone(chosen, result, nRules) {
   const sum = el("ul", "card list settings");
   const kv = (a, b) => { const li = el("li", "imp-kv"); li.append(el("span", "label", a), el("b", null, String(b))); return li; };
   sum.append(kv("Entrate", chosen.filter((it) => it.kind === "entrata").length), kv("Uscite", chosen.filter((it) => it.kind === "uscita").length),
-    kv("Non importati", imp.items.length - chosen.length));
+    kv("Non importati", imp.items.length - chosen.length - nBacks));
+  if (nBacks) sum.append(kv("Restituzioni di anticipi", nBacks));
   if (result.skipped) sum.append(kv("Già presenti, saltati", result.skipped));
   if (nRules) sum.append(kv("Negozi ricordati per la prossima volta", nRules));
   const undo = el("button", "imp-undo", "Annulla questa importazione");
+  undo.hidden = !result.batch_id;
   undo.type = "button";
   undo.addEventListener("click", () => confirmUndo({ id: result.batch_id, n_added: n, created_at: new Date().toISOString() }));
   $("imp-body").replaceChildren(box, sum, el("p", "imp-note", "Prima di importare Flunora ha salvato una copia dei tuoi dati."), undo,
