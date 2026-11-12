@@ -11,6 +11,7 @@ I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo
 - Saldo (bozza A): con la sezione Desideri attiva e soldi messi da parte il numero grande è "Disponibile" = conto − Desideri; sotto "Desideri … · Conto …" (+ "da ricevere" degli anticipi). Sezione spenta → "Saldo totale" come prima
 - Supabase (`0.5.0_desideri.sql`): tabella `wishes` (stato attivo / comprato / rinuncia) con regole per utente; `restore_backup` ripristina anche i desideri (con "Unisci" salta quelli con stesso nome e prezzo)
 - Backup: il file include i desideri
+- Risolto un bug per cui nei Desideri il mese scelto compariva con la lettera minuscola (bug #008): `wishPlan` scrive il mese con la maiuscola ("Entro Luglio 2027"); il campo "Entro il" ha `text-transform: capitalize`, anche sul valore mostrato da Safari (`::-webkit-date-and-time-value`)
 - I soldi messi da parte non sono movimenti: non contano in budget, "Ti restano", Categorie e totali
 
 ## 0.4.6
