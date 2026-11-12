@@ -1105,3 +1105,55 @@ button:active:not(:disabled), .tap:active, .chip:active, .leg button:active, .op
 .more-opt .here { color: var(--secondary); font-size: 14px; }
 /* impostazioni: dove sta ogni sezione */
 #sections-list .where.extra { color: var(--accent); }
+
+/* =========================================================
+   0.4.5 — ANTICIPI
+   ========================================================= */
+/* pannello +: quattro tipi nel selettore */
+#kind-seg { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+#kind-seg button { min-width: 0; padding-left: 2px; padding-right: 2px; }
+#kind-seg button[hidden] { display: none; }
+#kind-seg:has(#kind-anticipo:not([hidden])) button { font-size: 14px; letter-spacing: -.2px; }
+.segmented button.on[data-kind="anticipo"] { background: #af52de; color: #fff; }
+.adv-hint { margin: -6px 0 0; text-align: center; font-size: 14px; color: var(--secondary); }
+.adv-cat-hint { margin: -6px 16px 0; }
+.adv-box { display: flex; flex-direction: column; gap: 14px; }
+.adv-box input, .adv-person input { border: 0; background: none; font: inherit; color: var(--text); text-align: right; flex: 1; min-width: 0; outline: none; }
+.adv-person input:first-child { text-align: left; }
+.adv-person input.amt { flex: 0 0 96px; font-variant-numeric: tabular-nums; }
+.adv-x { border: 0; background: none; color: var(--secondary); font-size: 22px; line-height: 1; padding: 4px; cursor: pointer; }
+.adv-add { align-self: flex-start; border: 0; background: none; color: var(--accent); font: inherit; font-size: 16px; padding: 0 16px; cursor: pointer; }
+.adv-check { margin: -6px 16px 0; }
+.adv-check.bad { color: var(--out); }
+
+/* sezione Anticipi */
+#page-anticipi { display: flex; flex-direction: column; gap: 14px; }
+#page-anticipi[hidden] { display: none; }
+.adv-sum { display: grid; gap: 2px; }
+.adv-sum .lbl { font-size: 15px; color: var(--secondary); }
+.adv-sum .big { font-size: min(36px, 9.5vw); font-weight: 700; letter-spacing: -.6px; font-variant-numeric: tabular-nums; }
+.adv-card { display: grid; gap: 2px; }
+.adv-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; cursor: pointer; }
+.adv-head h2 { font-size: 17px; margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.adv-sub { margin: 0 0 6px; }
+.adv-late { flex: none; font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; color: var(--out); background: color-mix(in srgb, var(--out) 16%, transparent); }
+.adv-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: .5px solid var(--separator); }
+.adv-av { width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center; font-weight: 600; font-size: 14px; color: #af52de; background: color-mix(in srgb, #af52de 16%, transparent); }
+.adv-who { flex: 1; min-width: 0; display: grid; }
+.adv-btn { flex: none; border: 0; border-radius: 999px; padding: 7px 14px; background: var(--fill); color: var(--accent); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+.adv-btn:active { transform: scale(.96); }
+.adv-state { flex: none; font-size: 13px; color: var(--good); text-align: right; }
+.adv-row.done.contanti .adv-state { color: var(--secondary); }
+.adv-row.done.persa .adv-state { color: var(--out); }
+.adv-closed-toggle { align-self: flex-start; border: 0; background: none; color: var(--secondary); font: inherit; font-size: 15px; padding: 4px 4px; cursor: pointer; }
+#adv-closed { display: flex; flex-direction: column; gap: 14px; }
+#adv-closed[hidden] { display: none; }
+#adv-closed .adv-card { opacity: .75; }
+
+/* pallino per un anticipo aperto da più di 30 giorni */
+.tab.alert::after, .gear.more.alert::after {
+  content: ""; position: absolute; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--out); box-shadow: 0 0 0 2px var(--card);
+}
+.tab.alert::after { top: 6px; right: calc(50% - 18px); }
+.gear.more.alert::after { top: 6px; right: 6px; }

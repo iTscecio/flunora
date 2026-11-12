@@ -2,6 +2,17 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.4.5
+- Nuova sezione Anticipi (non più segnaposto), icona con due mani: riepilogo "Da ricevere", anticipi aperti con le quote per persona, "Chiusi (n)" a scomparsa; toccando il titolo di un anticipo si può eliminarlo
+- Pannello +: quarto tipo "Anticipo" (solo per movimenti nuovi e con la sezione Anticipi attiva). L'importo grande è il totale pagato; "La tua parte" (0 se non c'è); "Chi deve restituire" con nome e quota, divisa in parti uguali tra le quote non scritte a mano; controllo che quote + tua parte = totale; descrizione obbligatoria; la categoria vale per la tua parte e per le quote non restituite
+- Supabase (`0.4.5_anticipi.sql`): tabelle `advances` e `advance_shares` (stato aperta / conto / contanti / persa, data di chiusura) con regole per utente; `restore_backup` ripristina anche gli anticipi (con "Unisci" salta quelli con stessa data, descrizione e totale)
+- Gli anticipi non sono movimenti: non contano in budget, "Ti restano", Categorie, totali mensili e Frequenti. La tua parte è un'uscita normale ("… (tua parte)"); "Non me li restituisce" crea un'uscita ("… · quota di …") nella categoria dell'anticipo
+- Saldo totale: meno la parte degli altri degli anticipi pagati dopo la data del saldo iniziale, più le quote restituite sul conto o diventate spesa (`advanceDelta`); le quote restituite in contanti non toccano il saldo del conto. Sotto il saldo "da ricevere X €"
+- Anticipo con quote aperte da 30 giorni o più (`ADV_LATE_DAYS`): etichetta arancione "da N giorni" e pallino sull'icona della sezione (o sul pulsante Altre sezioni)
+- Backup: il file include gli anticipi con le quote
+- Selettore del tipo su una riga anche con quattro voci
+- Da sapere fino alla 0.4.6: importando l'estratto conto, il pagamento dell'anticipo e i bonifici di restituzione compaiono come movimenti e vanno scartati nella revisione
+
 ## 0.4.4
 - Sezioni senza limite: l'interruttore in Impostazioni dice solo se una sezione è attiva; nella barra vanno le prime 4 attive (`MAX_TABS`) nell'ordine trascinato, le altre in "Altre sezioni"
 - Pulsante `#btn-more` (quattro quadratini, stile liquid glass) a sinistra dell'ingranaggio; compare solo se c'è almeno una sezione attiva fuori dalla barra; blu quando è aperta una di quelle sezioni

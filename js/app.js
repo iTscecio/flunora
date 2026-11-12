@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.4.4";
+const APP_VERSION = "0.4.5";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -219,6 +219,7 @@ function route() {
   window.scrollTo(0, 0);
   if (p === "dashboard") loadDashboard();
   if (p === "mesi") loadMonth();
+  if (p === "anticipi") loadAdvances();
 }
 window.addEventListener("hashchange", route);
 
@@ -896,10 +897,12 @@ function setKind(kind) {
   }
   renderChips();
   renderFreq();
+  renderAdvFields();
 }
 
 // categorie selezionabili: quelle attive, più quella del movimento in modifica se archiviata
 function chipCategories(kind) {
+  if (kind === "anticipo") kind = "uscita"; // 0.4.5: categoria della propria parte
   return state.categories.filter((c) => c.kind === kind &&
     (!c.archived || c.id === state.editing?.category_id));
 }
@@ -952,6 +955,10 @@ function openSheet(tx) {
   $("sheet").scrollTop = 0;
   $("freq-row").scrollLeft = 0;
   if (!tx) loadFreq();
+  // 0.4.5: "Anticipo" solo per i movimenti nuovi e con la sezione Anticipi attiva
+  $("kind-anticipo").hidden = !!tx || !state.sections.some((x) => x.id === "anticipi" && x.on);
+  if ($("kind-anticipo").hidden && state.kind === "anticipo") setKind("uscita");
+  resetAdvFields();
   // 0.2.1: niente cursore automatico, la tastiera si apre solo toccando un campo
 }
 
@@ -1084,8 +1091,265 @@ $("freq-reset").addEventListener("click", () => {
   toast("Scorciatoie di nuovo visibili");
 });
 
+
+// =========================================================
+// 0.4.5 — ANTICIPI
+// Soldi pagati per altri: tabelle advances (l'anticipo) e advance_shares (chi deve quanto).
+// Non sono movimenti; la "tua parte" e le quote perse diventano normali uscite.
+// =========================================================
+const ADV_LATE_DAYS = 30;
+const advDate = (iso) => new Date(iso + "T12:00").toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+let advPeople = []; // righe del pannello: { name, cents, manual }
+
+function resetAdvFields() {
+  $("adv-own").value = "";
+  advPeople = [{ name: "", cents: 0, manual: false }];
+  renderAdvPeople();
+}
+
+function renderAdvFields() {
+  const adv = state.kind === "anticipo";
+  $("adv-box").hidden = !adv;
+  $("adv-amount-hint").hidden = !adv;
+  $("adv-cat-hint").hidden = !adv;
+  $("cat-title").textContent = adv ? "Categoria della tua parte" : "Categoria";
+  $("f-desc").placeholder = adv ? "Es. Regalo Giulia" : "Facoltativa";
+  if (adv) splitAdv();
+}
+
+// divide in parti uguali quello che resta dopo la tua parte tra le quote non scritte a mano
+function splitAdv() {
+  const total = parseAmount($("f-amount").value) || 0;
+  const own = parseSigned($("adv-own").value || "0") || 0;
+  const fixed = advPeople.filter((p) => p.manual).reduce((a, p) => a + p.cents, 0);
+  const auto = advPeople.filter((p) => !p.manual);
+  const rest = Math.max(0, total - own - fixed);
+  auto.forEach((p, i) => { p.cents = Math.floor(rest / auto.length) + (i < rest % auto.length ? 1 : 0); });
+  renderAdvPeople();
+}
+
+function renderAdvPeople() {
+  const box = $("adv-people");
+  box.replaceChildren(...advPeople.map((p, i) => {
+    const row = el("div", "group-row adv-person");
+    const name = el("input");
+    name.placeholder = "Nome"; name.maxLength = 60; name.autocomplete = "off"; name.value = p.name;
+    name.setAttribute("aria-label", `Nome della persona ${i + 1}`);
+    name.addEventListener("input", () => { p.name = name.value; });
+    const amt = el("input", "amt");
+    amt.inputMode = "decimal"; amt.autocomplete = "off"; amt.placeholder = "0,00";
+    amt.value = p.cents ? fmtPlain(p.cents) : "";
+    amt.setAttribute("aria-label", `Quota della persona ${i + 1}`);
+    amt.addEventListener("input", () => { p.cents = parseAmount(amt.value) || 0; p.manual = amt.value.trim() !== ""; updateAdvCheck(); });
+    amt.addEventListener("blur", () => splitAdv());
+    row.append(name, amt);
+    if (advPeople.length > 1) {
+      const x = el("button", "adv-x", "×");
+      x.type = "button"; x.setAttribute("aria-label", "Togli questa persona");
+      x.addEventListener("click", () => { advPeople.splice(i, 1); splitAdv(); });
+      row.append(x);
+    }
+    return row;
+  }));
+  updateAdvCheck();
+}
+
+function updateAdvCheck() {
+  const total = parseAmount($("f-amount").value) || 0;
+  const own = parseSigned($("adv-own").value || "0") || 0;
+  const shares = advPeople.reduce((a, p) => a + p.cents, 0);
+  const ok = total > 0 && own + shares === total;
+  $("adv-check").textContent = total ? `Quote ${fmt(shares)} + tua parte ${fmt(own)} = ${fmt(own + shares)}` +
+    (ok ? " ✓" : ` · mancano ${fmt(total - own - shares)}`) : "";
+  $("adv-check").classList.toggle("bad", !!total && !ok);
+}
+
+$("adv-add").addEventListener("click", () => {
+  advPeople.push({ name: "", cents: 0, manual: false });
+  splitAdv();
+  $("adv-people").lastElementChild?.querySelector("input")?.focus();
+});
+$("adv-own").addEventListener("input", splitAdv);
+$("f-amount").addEventListener("input", () => { if (state.kind === "anticipo") splitAdv(); });
+
+async function saveAdvance() {
+  const msg = $("sheet-msg");
+  const total = parseAmount($("f-amount").value);
+  const own = parseSigned($("adv-own").value || "0");
+  const desc = $("f-desc").value.trim();
+  const people = advPeople.map((p) => ({ ...p, name: p.name.trim() })).filter((p) => p.name || p.cents);
+  if (total === null) { setMsg(msg, "Inserisci quanto hai pagato in tutto.", true); return $("f-amount").focus(); }
+  if (!desc) { setMsg(msg, "Scrivi una descrizione, es. Regalo Giulia.", true); return $("f-desc").focus(); }
+  if (own === null || own < 0 || own >= total) { setMsg(msg, "La tua parte deve essere minore del totale.", true); return; }
+  if (!people.length) { setMsg(msg, "Aggiungi chi deve restituirti i soldi.", true); return; }
+  if (people.some((p) => !p.name)) { setMsg(msg, "Scrivi il nome di ogni persona.", true); return; }
+  if (people.some((p) => p.cents <= 0)) { setMsg(msg, "Ogni persona deve avere una quota.", true); return; }
+  if (own + people.reduce((a, p) => a + p.cents, 0) !== total) { setMsg(msg, "Le quote più la tua parte devono fare il totale.", true); return; }
+  if (!state.categoryId) { setMsg(msg, "Scegli una categoria.", true); return; }
+
+  const save = $("sheet-save");
+  save.disabled = true;
+  const date = $("f-date").value || isoDate(new Date());
+  const { data: adv, error } = await sb.from("advances").insert({
+    date, description: desc, total_cents: total, own_cents: own, own_category_id: state.categoryId,
+  }).select().single();
+  if (error) { save.disabled = false; return setMsg(msg, "Errore nel salvataggio: " + traduciErrore(error.message), true); }
+  const { error: e2 } = await sb.from("advance_shares").insert(people.map((p, i) => ({
+    advance_id: adv.id, person: p.name, amount_cents: p.cents, sort_order: i, status: "aperta",
+  })));
+  if (!e2 && own > 0) {
+    const { data: tx } = await sb.from("transactions").insert({
+      kind: "uscita", amount_cents: own, category_id: state.categoryId, date, description: `${desc} (tua parte)`,
+    }).select().single();
+    if (tx) await sb.from("advances").update({ own_tx_id: tx.id }).eq("id", adv.id);
+  }
+  save.disabled = false;
+  if (e2) {
+    await sb.from("advances").delete().eq("id", adv.id);
+    return setMsg(msg, "Errore nel salvataggio: " + traduciErrore(e2.message), true);
+  }
+  state.lastCategory.anticipo = state.categoryId;
+  closeSheet();
+  toast("Anticipo salvato");
+  if (state.page === "anticipi") loadAdvances();
+  else refreshAfterChange(date);
+}
+
+// quanto devi ancora ricevere e se c'è qualcosa in ritardo (per saldo e pallino)
+async function loadAdvanceOpen() {
+  const { data, error } = await sb.from("advance_shares").select("amount_cents, advance_id").eq("status", "aperta");
+  if (error) { state.advOpenCents = 0; return; }
+  state.advOpenCents = data.reduce((a, x) => a + x.amount_cents, 0);
+  if (!data.length) return setAdvAlert(false);
+  const limit = isoDate(new Date(Date.now() - ADV_LATE_DAYS * 864e5));
+  const { data: late } = await sb.from("advances").select("id").in("id", [...new Set(data.map((x) => x.advance_id))]).lte("date", limit);
+  setAdvAlert(!!late?.length);
+}
+function setAdvAlert(on) {
+  state.advAlert = on;
+  document.querySelector('#tab-pill .tab[data-page="anticipi"]')?.classList.toggle("alert", on);
+  $("btn-more").classList.toggle("alert", on && moreSections().some((x) => x.id === "anticipi"));
+}
+
+async function loadAdvances() {
+  const [a, s] = await Promise.all([
+    sb.from("advances").select("*").order("date", { ascending: false }),
+    sb.from("advance_shares").select("*").order("sort_order"),
+  ]);
+  if (a.error || s.error) {
+    $("adv-open").replaceChildren(el("p", "secondary", "Gli anticipi non sono ancora disponibili: esegui lo script della 0.4.5 in Supabase."));
+    return;
+  }
+  const shares = new Map();
+  for (const x of s.data) (shares.get(x.advance_id) || shares.set(x.advance_id, []).get(x.advance_id)).push(x);
+  const list = a.data.map((x) => ({ ...x, shares: shares.get(x.id) || [] }));
+  const open = list.filter((x) => x.shares.some((q) => q.status === "aperta"));
+  const closed = list.filter((x) => !open.includes(x));
+  const openShares = open.flatMap((x) => x.shares.filter((q) => q.status === "aperta"));
+  const cents = openShares.reduce((t, q) => t + q.amount_cents, 0);
+  state.advOpenCents = cents;
+  $("adv-total").textContent = fmt(cents);
+  const people = new Set(openShares.map((q) => q.person.toLowerCase())).size;
+  $("adv-count").textContent = open.length
+    ? `da ${people} ${people === 1 ? "persona" : "persone"} · ${open.length} ${open.length === 1 ? "anticipo aperto" : "anticipi aperti"}`
+    : "Nessun anticipo aperto";
+  $("adv-sum").hidden = !list.length;
+  $("adv-empty").hidden = open.length > 0;
+  $("adv-open").replaceChildren(...open.map(advCard));
+  const t = $("adv-closed-toggle");
+  t.hidden = !closed.length;
+  t.textContent = `Chiusi (${closed.length}) ${$("adv-closed").hidden ? "›" : "⌄"}`;
+  $("adv-closed").replaceChildren(...closed.map(advCard));
+  const limit = isoDate(new Date(Date.now() - ADV_LATE_DAYS * 864e5));
+  setAdvAlert(open.some((x) => x.date <= limit));
+}
+$("adv-closed-toggle").addEventListener("click", () => {
+  $("adv-closed").hidden = !$("adv-closed").hidden;
+  $("adv-closed-toggle").textContent = $("adv-closed-toggle").textContent.replace(/[›⌄]$/, $("adv-closed").hidden ? "›" : "⌄");
+});
+
+const STATUS_TXT = { conto: "restituiti sul conto", contanti: "restituiti in contanti", persa: "diventati una spesa" };
+function advCard(x) {
+  const card = el("section", "card adv-card");
+  const head = el("div", "adv-head");
+  head.append(el("h2", null, x.description));
+  const days = Math.floor((Date.now() - new Date(x.date + "T12:00:00").getTime()) / 864e5);
+  const isOpen = x.shares.some((q) => q.status === "aperta");
+  if (isOpen && days >= ADV_LATE_DAYS) head.append(el("span", "adv-late", `da ${days} giorni`));
+  else head.append(el("span", "secondary small", advDate(x.date)));
+  const cat = catById(x.own_category_id);
+  const sub = el("p", "secondary small adv-sub",
+    `${isOpen && days >= ADV_LATE_DAYS ? advDate(x.date) + " · " : ""}pagato ${fmt(x.total_cents)} · ` +
+    (x.own_cents ? `tua parte ${fmt(x.own_cents)}${cat ? ` (${cat.name})` : ""}` : "nessuna tua parte"));
+  card.append(head, sub);
+  for (const q of x.shares) {
+    const row = el("div", "adv-row");
+    const av = el("span", "adv-av", (q.person.trim()[0] || "?").toUpperCase());
+    const who = el("span", "adv-who");
+    who.append(el("span", null, q.person), el("span", "secondary small", fmt(q.amount_cents)));
+    row.append(av, who);
+    if (q.status === "aperta") {
+      const b = el("button", "adv-btn", "Restituito");
+      b.type = "button";
+      b.addEventListener("click", () => advShareMenu(x, q));
+      row.append(b);
+    } else {
+      row.classList.add("done", q.status);
+      row.append(el("span", "adv-state", `${advDate(q.closed_on)}, ${STATUS_TXT[q.status]}`));
+    }
+    card.append(row);
+  }
+  card.addEventListener("contextmenu", (e) => { e.preventDefault(); advDeleteMenu(x); });
+  head.addEventListener("click", () => advDeleteMenu(x));
+  return card;
+}
+
+function advShareMenu(x, q) {
+  actionSheet({
+    title: `${q.person} · ${fmt(q.amount_cents)}`,
+    message: x.description,
+    actions: [
+      { label: "Restituito sul conto", onClick: () => closeShare(x, q, "conto") },
+      { label: "Restituito in contanti", onClick: () => closeShare(x, q, "contanti") },
+      { label: "Non me li restituisce", danger: true, onClick: () => closeShare(x, q, "persa") },
+    ],
+  });
+}
+
+async function closeShare(x, q, status) {
+  const today = isoDate(new Date());
+  const patch = { status, closed_on: today };
+  if (status === "persa") {
+    const cat = catById(x.own_category_id) || chipCategories("uscita")[0];
+    const { data: tx, error } = await sb.from("transactions").insert({
+      kind: "uscita", amount_cents: q.amount_cents, category_id: cat?.id, date: today,
+      description: `${x.description} · quota di ${q.person}`,
+    }).select().single();
+    if (error) return toast("Errore: " + traduciErrore(error.message));
+    patch.lost_tx_id = tx.id;
+  }
+  const { error } = await sb.from("advance_shares").update(patch).eq("id", q.id);
+  if (error) return toast("Errore: " + traduciErrore(error.message));
+  toast(status === "persa" ? `Quota di ${q.person} segnata come spesa` : `Quota di ${q.person} restituita`);
+  loadAdvances();
+}
+
+function advDeleteMenu(x) {
+  actionSheet({
+    title: x.description,
+    message: "Eliminando l'anticipo si eliminano anche le quote. La tua parte resta tra i movimenti.",
+    actions: [{ label: "Elimina anticipo", danger: true, onClick: async () => {
+      const { error } = await sb.from("advances").delete().eq("id", x.id);
+      if (error) return toast("Errore: " + traduciErrore(error.message));
+      toast("Anticipo eliminato");
+      loadAdvances();
+    } }],
+  });
+}
+
 $("sheet").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (state.kind === "anticipo") return saveAdvance();
   const msg = $("sheet-msg");
   const amount = parseAmount($("f-amount").value);
   if (amount === null) { setMsg(msg, "Inserisci un importo valido, es. 12,50.", true); $("f-amount").focus(); return; }
@@ -1149,7 +1413,7 @@ const ICONS = {
   mesi: '<svg viewBox="0 0 24 24" class="stroke"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>',
   abbonamenti: '<svg viewBox="0 0 24 24" class="stroke"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg>',
   auto: '<svg viewBox="0 0 24 24" class="stroke"><path d="M5 16V11l2-4.5h10L19 11v5"/><path d="M3.5 16h17M5 11h14"/><circle cx="7.5" cy="17.5" r="1.8"/><circle cx="16.5" cy="17.5" r="1.8"/></svg>',
-  anticipi: '<svg viewBox="0 0 24 24" class="stroke"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
+  anticipi: '<svg viewBox="0 0 24 24" class="stroke"><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/></svg>',
   desideri: '<svg viewBox="0 0 24 24" class="stroke"><rect x="3.5" y="8" width="17" height="4" rx="1"/><path d="M5 12v8h14v-8M12 8v12M12 8c-1.5-3.5-6-3.5-5-.5.5 1.2 2.5.5 5 .5zM12 8c1.5-3.5 6-3.5 5-.5-.5 1.2-2.5.5-5 .5z"/></svg>',
 };
 const SECTIONS = {
@@ -1157,7 +1421,7 @@ const SECTIONS = {
   mesi:        { name: "Mesi",        color: "#34c759" },
   abbonamenti: { name: "Abbonamenti", color: "#ff2d55", placeholder: true },
   auto:        { name: "Auto",        color: "#ff9500", placeholder: true },
-  anticipi:    { name: "Anticipi",    color: "#af52de", placeholder: true },
+  anticipi:    { name: "Anticipi",    color: "#af52de" },
   desideri:    { name: "Desideri",    color: "#30b0c7", placeholder: true },
 };
 const DEFAULT_SECTIONS = [
@@ -1259,6 +1523,7 @@ function renderMoreButton() {
   const extra = moreSections();
   $("btn-more").hidden = extra.length === 0;
   $("btn-more").classList.toggle("active", extra.some((s) => s.id === state.page));
+  if (state.advAlert) setAdvAlert(true); // 0.4.5: il pallino resta dopo aver ridisegnato la barra
 }
 function openMore() {
   const list = $("more-list");
@@ -2190,7 +2455,21 @@ async function computeBalance(o) {
   ]);
   if (mid.error) throw mid.error;
   const middle = mid.data.reduce((a, r) => a + delta(r.entrate_cents, r.uscite_cents, r.investimenti_cents), 0);
-  return o.cents + first + middle + current;
+  return o.cents + first + middle + current + await advanceDelta(o.date, today);
+}
+
+// 0.4.5: effetto degli anticipi sul saldo dopo la data del saldo iniziale.
+// Pagare un anticipo toglie la parte degli altri (la propria è già un movimento);
+// una quota restituita sul conto o diventata spesa la rimette (la spesa la toglie di nuovo come movimento).
+async function advanceDelta(after, today) {
+  const [adv, sh] = await Promise.all([
+    sb.from("advances").select("total_cents, own_cents, date").gt("date", after).lte("date", today),
+    sb.from("advance_shares").select("amount_cents, status, closed_on").in("status", ["conto", "persa"]).gt("closed_on", after),
+  ]);
+  if (adv.error || sh.error) return 0; // tabelle non ancora create: saldo come prima
+  const out = adv.data.reduce((a, x) => a + x.total_cents - x.own_cents, 0);
+  const back = sh.data.filter((x) => x.closed_on <= today).reduce((a, x) => a + x.amount_cents, 0);
+  return back - out;
 }
 
 async function loadBalance() {
@@ -2212,7 +2491,7 @@ async function loadBalance() {
     card.replaceChildren(el("span", "lbl", "Saldo totale"), el("span", "big", "–"), el("span", "when", ""));
   }
   try {
-    const cents = await computeBalance(o);
+    const [cents] = await Promise.all([computeBalance(o), loadAdvanceOpen()]);
     if (!opening()) return;
     state.balance = cents;
     showBalance(false);
@@ -2256,7 +2535,8 @@ function showBalance(fromZero) {
   if (fromZero) big._value = 0;
   countTo(big, cents, (v) => (v < 0 ? "− " : "") + fmt(Math.abs(v)));
   big.classList.toggle("neg", cents < 0);
-  card.querySelector(".when").textContent = cents < 0 ? `In negativo oggi, ${oggi}` : `Disponibili oggi, ${oggi}`;
+  card.querySelector(".when").textContent = (cents < 0 ? `In negativo oggi, ${oggi}` : `Disponibili oggi, ${oggi}`) +
+    (state.advOpenCents > 0 ? ` · da ricevere ${fmt(state.advOpenCents)}` : "");
   card.setAttribute("aria-label", `Saldo totale ${(cents < 0 ? "− " : "") + fmt(Math.abs(cents))}. Tocca per cambiare il saldo iniziale`);
 }
 
@@ -2350,10 +2630,11 @@ async function fetchAllOptional(table, orderCol) {
 const stripUser = (rows) => rows.map(({ user_id, ...r }) => r);
 
 async function buildBackup() {
-  const [categories, transactions, budgets, recurring, importRules] = await Promise.all([
+  const [categories, transactions, budgets, recurring, importRules, advances, advShares] = await Promise.all([
     fetchAll("categories"), fetchAll("transactions"),
     fetchAllOptional("budgets", "month"), fetchAllOptional("recurring"),
     fetchAllOptional("import_rules", "pattern"),
+    fetchAllOptional("advances"), fetchAllOptional("advance_shares"), // 0.4.5
   ]);
   const { sections, budget_cents, opening, backup_reminder_days } = state.settingsData || {};
   return {
@@ -2367,6 +2648,13 @@ async function buildBackup() {
       budgets: budgets.map((b) => ({ month: b.month, amount_cents: b.amount_cents })),
       recurring: stripUser(recurring),
       import_rules: importRules.map((r) => ({ pattern: r.pattern, category_id: r.category_id })),
+      // 0.4.5: anticipi con le loro quote (i collegamenti ai movimenti non servono al ripristino)
+      advances: advances.map((a) => ({
+        date: a.date, description: a.description, total_cents: a.total_cents, own_cents: a.own_cents,
+        own_category_id: a.own_category_id,
+        shares: advShares.filter((q) => q.advance_id === a.id).sort((x, y) => x.sort_order - y.sort_order)
+          .map((q) => ({ person: q.person, amount_cents: q.amount_cents, status: q.status, closed_on: q.closed_on })),
+      })),
       settings: { sections: sections || state.sections, budget_cents, opening, backup_reminder_days },
     },
   };
@@ -2690,7 +2978,7 @@ async function runRestore() {
     // 2. ripristino in un'unica operazione sul database
     const d = r.obj.data;
     const { data: res, error } = await sb.rpc("restore_backup", {
-      payload: { categories: d.categories, transactions: d.transactions, budgets: d.budgets || [], import_rules: d.import_rules || [] },
+      payload: { categories: d.categories, transactions: d.transactions, budgets: d.budgets || [], import_rules: d.import_rules || [], advances: d.advances || [] },
       replace_all: r.mode === "replace",
     });
     if (error) {

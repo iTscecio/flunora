@@ -5,6 +5,17 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.4.5", date: "12 novembre 2026",
+    items: [
+      "Nuovo: la sezione Anticipi, per i soldi che paghi per altri e che ti verranno restituiti; si attiva in Impostazioni › Sezioni",
+      "Nel pannello + c'è il tipo \"Anticipo\": scrivi quanto hai pagato, la tua parte (una spesa nella categoria che scegli) e chi ti deve restituire il resto; le quote si dividono in parti uguali e puoi correggerle",
+      "Gli anticipi non contano nel budget, in \"Ti restano\" e nelle Categorie: il saldo totale scende quando paghi e risale quando ti restituiscono i soldi sul conto",
+      "Per ogni persona: \"Restituito sul conto\", \"Restituito in contanti\" o \"Non me li restituisce\" (la quota diventa una spesa nella categoria dell'anticipo)",
+      "Sotto il saldo totale vedi quanto devi ancora ricevere; dopo 30 giorni l'anticipo si segna in arancione e la sezione mostra un pallino",
+      "Gli anticipi sono anche nel backup. Fino alla 0.4.6, quando importi l'estratto conto scarta il pagamento dell'anticipo e i bonifici di restituzione",
+    ],
+  },
+  {
     version: "0.4.4", date: "12 novembre 2026",
     items: [
       "Nuovo: le sezioni non sono più limitate a 4. Le prime 4 attive stanno nella barra, le altre si aprono dal pulsante a quattro quadratini accanto all'ingranaggio",

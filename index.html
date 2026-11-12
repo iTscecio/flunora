@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611122126">
+  <link rel="stylesheet" href="css/style.css?v=202611122151">
 </head>
 <body>
 
@@ -187,13 +187,22 @@
       </div>
     </main>
 
+    <!-- ---------- ANTICIPI (0.4.5) ---------- -->
     <main id="page-anticipi" class="page" hidden>
       <header class="page-head"><h1>Anticipi</h1></header>
-      <div class="card placeholder">
-        <span class="ph-ico" style="--c:#af52de"><svg viewBox="0 0 24 24" class="stroke"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span>
-        <h2>In arrivo</h2>
-        <p class="secondary">Qui segnerai i soldi che paghi per altri e che ti verranno restituiti, persona per persona.</p>
+      <section class="card adv-sum" id="adv-sum">
+        <span class="lbl">Da ricevere</span>
+        <span class="big" id="adv-total">0,00 €</span>
+        <span class="secondary small" id="adv-count"></span>
+      </section>
+      <div id="adv-open"></div>
+      <div id="adv-empty" class="card placeholder" hidden>
+        <span class="ph-ico" style="--c:#af52de"><svg viewBox="0 0 24 24" class="stroke"><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.060-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/></svg></span>
+        <h2>Nessun anticipo aperto</h2>
+        <p class="secondary">Quando paghi qualcosa per altri, scegli "Anticipo" nel pannello +: qui vedrai chi ti deve restituire quanto.</p>
       </div>
+      <button type="button" id="adv-closed-toggle" class="adv-closed-toggle" hidden></button>
+      <div id="adv-closed" hidden></div>
     </main>
 
     <main id="page-desideri" class="page" hidden>
@@ -293,6 +302,7 @@
         <button type="button" data-kind="uscita">Uscita</button>
         <button type="button" data-kind="entrata">Entrata</button>
         <button type="button" data-kind="investimento">Investimento</button>
+        <button type="button" data-kind="anticipo" id="kind-anticipo">Anticipo</button>
       </div>
 
       <!-- 0.4.3: scorciatoie per le spese che ripeti -->
@@ -306,8 +316,23 @@
         <input id="f-amount" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Importo">
       </label>
 
-      <h3 class="section-title">Categoria</h3>
+      <!-- 0.4.5: per un anticipo l'importo grande è il totale pagato -->
+      <p id="adv-amount-hint" class="adv-hint" hidden>Hai pagato in tutto</p>
+
+      <h3 class="section-title" id="cat-title">Categoria</h3>
       <div id="cat-chips" class="chips"></div>
+      <p id="adv-cat-hint" class="secondary small adv-cat-hint" hidden>Per la tua parte e per le quote che non ti restituiscono.</p>
+
+      <!-- 0.4.5: anticipo = la tua parte + le quote di chi deve restituire -->
+      <div id="adv-box" class="adv-box" hidden>
+        <div class="group">
+          <label class="group-row"><span>La tua parte</span><input id="adv-own" inputmode="decimal" placeholder="0,00 €" autocomplete="off"></label>
+        </div>
+        <h3 class="section-title">Chi deve restituire</h3>
+        <div class="group" id="adv-people"></div>
+        <button type="button" id="adv-add" class="adv-add">+ Aggiungi persona</button>
+        <p id="adv-check" class="secondary small adv-check"></p>
+      </div>
 
       <div class="group">
         <label class="group-row"><span>Data</span><input type="date" id="f-date"></label>
@@ -587,11 +612,11 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611122126"></script>
-  <script src="js/releases.js?v=202611122126"></script>
-  <script src="js/icons.js?v=202611122126"></script>
-  <script src="js/app.js?v=202611122126"></script>
-  <script src="js/bank-bdp.js?v=202611122126"></script>
-  <script src="js/import.js?v=202611122126"></script>
+  <script src="js/config.js?v=202611122151"></script>
+  <script src="js/releases.js?v=202611122151"></script>
+  <script src="js/icons.js?v=202611122151"></script>
+  <script src="js/app.js?v=202611122151"></script>
+  <script src="js/bank-bdp.js?v=202611122151"></script>
+  <script src="js/import.js?v=202611122151"></script>
 </body>
 </html>
