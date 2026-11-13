@@ -282,5 +282,10 @@ export async function handler(req: Request, testDb?: any, testNow?: Date): Promi
   return json({ ok: true, ora: now.hour, aggiunti: added, notifiche: sent });
 }
 
+// Deno.serve passa anche un secondo argomento (dati della connessione): va ignorato.
+// In caso di errore la risposta dice cosa è successo, così si legge da net._http_response.
 // @ts-ignore Deno
-if (typeof Deno !== "undefined" && Deno.serve) Deno.serve(handler);
+if (typeof Deno !== "undefined" && Deno.serve) Deno.serve(async (req: Request) => {
+  try { return await handler(req); }
+  catch (err) { return json({ error: String((err as Error)?.stack || err).slice(0, 600) }, 500); }
+});
