@@ -1384,3 +1384,87 @@ body.is-locked { overflow: hidden; }
 .imp-chip .fresh.rec { background: #5856d6; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .imp-chip.rec { color: #a5a4ff; } }
 :root[data-theme="dark"] .imp-chip.rec { color: #a5a4ff; }
+
+/* =========================================================
+   0.7.0 — AUTO: spese, rifornimenti, chilometri e scadenze
+   ========================================================= */
+.car-body { display: grid; gap: 14px; }
+.car-body[hidden], .car-setup[hidden], #car-fuel-new[hidden] { display: none; }
+.car-setup .lock-btn { min-width: 200px; margin-top: 4px; }
+.car-hero { display: grid; gap: 2px; padding: 14px 16px 16px; }
+.car-name { display: flex; align-items: baseline; gap: 8px; border: 0; background: none; padding: 0 0 8px; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.car-name > span:first-child { font-size: 20px; font-weight: 700; }
+.car-name .chev { color: var(--secondary); font-size: 20px; margin-left: auto; }
+.car-plate { font-size: 13px; font-weight: 600; letter-spacing: .8px; padding: 2px 7px; border-radius: 6px; border: 1.5px solid var(--separator); color: var(--secondary); }
+.car-plate[hidden] { display: none; }
+.car-hero .lbl { font-size: 15px; }
+.car-hero .big { font-size: min(36px, 9.5vw); font-weight: 700; letter-spacing: -.6px; font-variant-numeric: tabular-nums; }
+.car-title { padding-top: 8px; margin-bottom: -10px; }
+.car-title .link-btn { font-size: 15px; padding: 0; }
+.car-year { gap: 6px; }
+.car-year button { width: 28px; height: 28px; font-size: 20px; }
+.car-year button:disabled { opacity: .35; }
+.car-year span { min-width: 40px; font-size: 15px; }
+.car-dl[hidden], .car-dl-suggest[hidden] { display: none; }
+.car-dl li .label { display: grid; gap: 2px; min-width: 0; }
+.car-dl li .label small { color: var(--secondary); font-size: 13px; }
+.car-dl li .label small.car-dl-pay { color: #5856d6; font-weight: 600; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .car-dl li .label small.car-dl-pay { color: #a5a4ff; } }
+:root[data-theme="dark"] .car-dl li .label small.car-dl-pay { color: #a5a4ff; }
+.car-days { flex: none; font-size: 13px; font-weight: 600; padding: 4px 9px; border-radius: 999px; background: var(--fill); color: var(--secondary); white-space: nowrap; }
+.car-days.soon { background: color-mix(in srgb, #ff9500 18%, transparent); color: #c77700; }
+.car-days.late { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .car-days.soon { color: #ffb340; } }
+:root[data-theme="dark"] .car-days.soon { color: #ffb340; }
+.car-dl-suggest { padding: 0 2px; }
+.car-dl-suggest .chip { font-size: 14px; padding: 7px 12px; color: var(--accent); font-weight: 600; }
+.car-fuel { display: grid; gap: 10px; padding: 14px 16px 6px; }
+.car-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.car-kpis[hidden] { display: none; }
+.car-kpi { display: grid; gap: 1px; align-content: start; min-width: 0; }
+.car-kpi strong { font-size: 17px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.car-kpi small { font-size: 12px; line-height: 1.25; }
+.car-fuel-list { padding: 0; margin: 0 -16px 0 0; }
+.car-fuel-list[hidden], #car-fuel-empty[hidden] { display: none; }
+.car-fuel-list > li { min-height: 50px; padding-right: 16px; }
+.car-fuel-list > li.tap:active { margin-left: 0; padding-left: 0; }
+.car-fuel-kpis + .car-fuel-list { border-top: .5px solid var(--separator); }
+.car-fuel-list .title { text-transform: none; }
+.car-missing { color: var(--accent) !important; }
+.car-fuel-right { display: grid; justify-items: end; gap: 1px; }
+.car-kml { font-size: 13px; font-weight: 600; color: var(--good); font-variant-numeric: tabular-nums; }
+#car-fuel-empty { margin: 0 0 10px; }
+.car-km { display: grid; gap: 12px; }
+.car-km-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; }
+.car-km-head > div { display: grid; gap: 1px; }
+.car-km-big { font-size: 26px; font-weight: 700; letter-spacing: -.4px; font-variant-numeric: tabular-nums; }
+.car-km-empty { margin: 0; }
+.car-cats { display: grid; gap: 12px; }
+.car-cats .yr-cat { gap: 4px; }
+.car-cats-tot { display: grid; grid-template-columns: 1fr auto; padding-top: 10px; border-top: .5px solid var(--separator); }
+.car-cats-tot strong { font-variant-numeric: tabular-nums; }
+.car-cats-tot small { grid-column: 1 / -1; }
+/* pannello +: litri, pieno e km */
+.car-box { margin-top: 12px; }
+.car-box[hidden], #car-hint[hidden], #fuel-liters-row[hidden], #fuel-full-row[hidden] { display: none; }
+.car-box .group-row > span:first-child, .cardl-pay .group-row > span:first-child { width: 100px; }
+#fuel-full-row > span:first-child, .cardl-pay .group-row:first-child > span:first-child { width: auto; flex: 1; }
+.car-box .switch, .cardl-pay .switch { width: 51px; flex: none; }
+#car-hint { color: #c77700; font-weight: 600; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #car-hint { color: #ffb340; } }
+:root[data-theme="dark"] #car-hint { color: #ffb340; }
+/* pannelli dell'auto */
+#car-cat-list { margin: 0; }
+#car-cat-list li .label { flex: 1; }
+#car-add-cats { padding: 2px 4px 10px; text-align: left; font-size: 15px; }
+#car-add-cats[hidden] { display: none; }
+#car-sheet .section-title { margin: 14px 0 0; padding-bottom: 6px; }
+#car-sheet .group { margin-top: 4px; }
+.cardl-types { margin: 4px 0 14px; }
+.cardl-types[hidden], .cardl-pay[hidden], #cardl-name-row[hidden], #cardl-km-row[hidden], #cardl-amount-row[hidden], #cardl-done[hidden] { display: none; }
+.cardl-pay { margin-top: 12px; }
+#cardl-foot { margin-top: 8px; }
+#cardl-foot:has(#cardl-done[hidden]) { grid-template-columns: 1fr; }
+.km-amount { justify-content: center; }
+.km-amount input { text-align: right; width: 7ch; }
+.up-amt.up-car { font-size: 13px; color: #ff9500; }
