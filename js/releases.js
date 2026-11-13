@@ -5,7 +5,7 @@
 // =========================================================
 window.RELEASES = [
   {
-    version: "0.6.3", date: "novembre 2026",
+    version: "0.6.3", date: "13 novembre 2026",
     items: [
       "Abbonamenti: per ognuno vedi quanto costa all'anno e da quando lo paghi; in alto anche il totale all'anno di tutti gli abbonamenti (IMPR-011)",
       "Aprendo un abbonamento: quanto l'hai pagato finora, quante volte, e la storia del prezzo (IMPR-011)",
