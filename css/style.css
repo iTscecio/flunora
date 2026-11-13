@@ -1352,3 +1352,14 @@ body.is-locked { overflow: hidden; }
 .recap-acts { display: flex; align-items: center; gap: 10px; }
 .recap-acts .link-btn { font-size: 15px; }
 #yr { z-index: 37; }
+
+/* 0.6.2 — prova gratuita e promemoria per disdire */
+.sub-extra { margin-top: 12px; }
+.sub-extra[hidden], #trial-row[hidden], #cancel-row[hidden], #notice-row[hidden] { display: none; }
+.sub-extra .group-row > span:first-child { width: auto; flex: 1; }
+.sub-extra .group-row .switch { flex: none; }
+.per-flag { color: #c77700; font-weight: 600; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .per-flag { color: #ffb340; } }
+:root[data-theme="dark"] .per-flag { color: #ffb340; }
+.up-note { color: #c77700; }
+.sub-extra .group-row > .switch { width: 51px; }

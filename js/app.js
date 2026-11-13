@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.6.1";
+const APP_VERSION = "0.6.2";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -956,6 +956,7 @@ function openSheet(tx) {
   $("f-repeat").value = "";
   $("f-repeat").querySelector('option[value=""]').disabled = false;
   $("f-sub").value = "1";
+  resetSubExtra();
   $("sheet").classList.remove("top"); $("sheet-backdrop").classList.remove("top");
   if (tx) {
     state.categoryId = tx.category_id;
@@ -3802,7 +3803,50 @@ function syncRepRow() {
 // "Tipo" (abbonamento o pagamento periodico) solo per le uscite che si ripetono
 function syncSubRow() {
   $("sub-row").hidden = $("rep-row").hidden || !$("f-repeat").value || state.kind !== "uscita";
+  // 0.6.2: prova gratuita e promemoria per disdire, solo per gli abbonamenti
+  const abb = !$("sub-row").hidden && $("f-sub").value === "1";
+  $("sub-extra").hidden = !abb;
+  $("trial-row").hidden = !$("f-trial").checked;
+  $("cancel-row").hidden = !$("f-cancel").checked;
+  $("notice-row").hidden = !$("f-trial").checked && !$("f-cancel").checked;
 }
+function resetSubExtra(rec = null) {
+  const today = isoDate(new Date());
+  const trial = rec?.trial_end && rec.trial_end >= today ? rec.trial_end : "";
+  const cancel = rec?.cancel_by && rec.cancel_by >= today ? rec.cancel_by : "";
+  $("f-trial").checked = !!trial;
+  $("f-trial-end").value = trial || isoDate(new Date(Date.now() + 30 * 864e5));
+  $("f-cancel").checked = !!cancel;
+  $("f-cancel-by").value = cancel || "";
+  $("f-notice").value = String(rec?.notice_days || 3);
+}
+// dati della prova e della disdetta da salvare (null = non impostati)
+function subExtraValues() {
+  const abb = !$("sub-extra").hidden;
+  return {
+    trial_end: abb && $("f-trial").checked && $("f-trial-end").value ? $("f-trial-end").value : null,
+    cancel_by: abb && $("f-cancel").checked && $("f-cancel-by").value ? $("f-cancel-by").value : null,
+    notice_days: Number($("f-notice").value) || 3,
+  };
+}
+$("f-sub").addEventListener("change", () => { syncSubRow(); updateRepHint(); });
+$("f-trial").addEventListener("change", () => {
+  // con la prova il primo addebito arriva quando finisce
+  if ($("f-trial").checked && $("f-trial-end").value) $("f-date").value = $("f-trial-end").value;
+  syncSubRow(); updateRepHint();
+});
+$("f-trial-end").addEventListener("change", () => {
+  if ($("f-trial").checked && $("f-trial-end").value) $("f-date").value = $("f-trial-end").value;
+  updateRepHint();
+});
+$("f-cancel").addEventListener("change", () => {
+  if ($("f-cancel").checked && !$("f-cancel-by").value) {
+    // proposta: qualche giorno prima del prossimo addebito
+    const date = $("f-date").value || isoDate(new Date());
+    $("f-cancel-by").value = date > isoDate(new Date()) ? isoDate(new Date(Date.parse(date + "T12:00") - 2 * 864e5)) : isoDate(new Date(Date.now() + 28 * 864e5));
+  }
+  syncSubRow();
+});
 function updateRepHint() {
   const hint = $("rep-hint");
   const freq = $("f-repeat").value, date = $("f-date").value;
@@ -3811,15 +3855,20 @@ function updateRepHint() {
   const rec = { frequency: freq, day_of_month: d, month_of_year: m, start_date: date };
   const today = isoDate(new Date());
   const next = date > today ? date : recNext(rec, today);
-  hint.textContent = state.editingRec
-    ? `${recLabel(rec)}. Il prossimo arriva ${shortDay(next)}. I movimenti già aggiunti non cambiano.`
-    : `${recLabel(rec)}${date <= today ? ": questo lo aggiungo subito" : ""}, il prossimo arriva ${shortDay(date > today ? date : next)}. Lo trovi nella sezione Abbonamenti.`;
+  const trial = !$("sub-extra").hidden && $("f-trial").checked && $("f-trial-end").value > today;
+  hint.textContent = trial
+    ? `Prova gratuita fino al ${advDate($("f-trial-end").value)}: il primo addebito arriva quel giorno, poi ${recLabel(rec).toLowerCase()}.`
+    : state.editingRec
+      ? `${recLabel(rec)}. Il prossimo arriva ${shortDay(next)}. I movimenti già aggiunti non cambiano.`
+      : `${recLabel(rec)}${date <= today ? ": questo lo aggiungo subito" : ""}, il prossimo arriva ${shortDay(date > today ? date : next)}. Lo trovi nella sezione Abbonamenti.`;
   hint.hidden = false;
 }
 $("f-repeat").addEventListener("change", () => { syncSubRow(); updateRepHint(); });
 $("f-date").addEventListener("change", updateRepHint);
 
 async function saveNewRec(row, freq) {
+  const extra = subExtraValues();
+  if (extra.trial_end) row.date = extra.trial_end; // 0.6.2: in prova, il primo addebito è alla fine
   const [, m, d] = row.date.split("-").map(Number);
   const rec = {
     kind: row.kind, category_id: row.category_id, amount_cents: row.amount_cents,
@@ -3828,16 +3877,19 @@ async function saveNewRec(row, freq) {
     start_date: row.date, last_date: null, active: true,
     is_subscription: row.kind === "uscita" && $("f-sub").value === "1",
   };
+  if (rec.is_subscription && (extra.trial_end || extra.cancel_by)) Object.assign(rec, extra);
   const { error } = await sb.from("recurring").insert(rec);
   if (error) {
-    return setMsg($("sheet-msg"), /frequency|start_date|schema cache|PGRST204|42703/i.test(`${error.message} ${error.code}`)
+    return setMsg($("sheet-msg"), /trial_end|cancel_by|notice_days/i.test(`${error.message}`) ? "Prima esegui lo script della 0.6.2 in Supabase."
+      : /frequency|start_date|schema cache|PGRST204|42703/i.test(`${error.message} ${error.code}`)
       ? "Prima esegui lo script della 0.6.0 in Supabase." : "Errore nel salvataggio: " + traduciErrore(error.message), true);
   }
   state.lastCategory[row.kind] = row.category_id;
   closeSheet();
   await runRecurring(true);
   const today = isoDate(new Date());
-  toast(row.date <= today ? `Movimento salvato: si ripete ${recLabel(rec).toLowerCase()}` : `Periodico salvato: il primo arriva ${shortDay(row.date)}`);
+  toast(extra.trial_end ? `Abbonamento salvato: prova gratuita fino al ${advDate(extra.trial_end)}`
+    : row.date <= today ? `Movimento salvato: si ripete ${recLabel(rec).toLowerCase()}` : `Periodico salvato: il primo arriva ${shortDay(row.date)}`);
   refreshAfterChange(row.date);
   if (state.page === "abbonamenti") renderPeriodic();
 }
@@ -3857,6 +3909,7 @@ function openRecSheet(rec) {
   $("f-repeat").value = rec.frequency;
   $("f-repeat").querySelector('option[value=""]').disabled = true;
   $("f-sub").value = rec.is_subscription ? "1" : "0";
+  resetSubExtra(rec);
   $("freq-box").hidden = true;
   $("kind-anticipo").hidden = true;
   $("sheet-foot").hidden = false;
@@ -3882,6 +3935,14 @@ async function saveRecFromSheet() {
     frequency: freq, day_of_month: d, month_of_year: freq === "anno" ? m : null,
     is_subscription: state.kind === "uscita" && $("f-sub").value === "1",
   };
+  // 0.6.2: prova e disdetta (si tolgono spegnendo l'interruttore)
+  const extra = subExtraValues();
+  if (patch.is_subscription) Object.assign(patch, extra);
+  else Object.assign(patch, { trial_end: null, cancel_by: null });
+  if (extra.trial_end && extra.trial_end !== rec.trial_end && extra.trial_end > isoDate(new Date())) {
+    Object.assign(patch, { start_date: extra.trial_end, last_date: null, day_of_month: Number(extra.trial_end.slice(8)) });
+    if (freq === "anno") patch.month_of_year = Number(extra.trial_end.slice(5, 7));
+  }
   // data o frequenza cambiate: si riparte da quella data (i mesi già fatti restano, senza doppioni)
   if (date !== rec.shownDate || freq !== rec.frequency) Object.assign(patch, { start_date: date, last_date: null });
   const { error } = await sb.from("recurring").update(patch).eq("id", rec.id);
@@ -3973,6 +4034,11 @@ async function renderPeriodic() {
       if (g.tag) sub.append(el("b", "per-tag " + g.id, g.tag), " · ");
       sub.append(when);
       label.append(el("span", null, name), sub);
+      // 0.6.2: prova gratuita e data per disdire
+      const flags = [];
+      if (r.trial_end && r.trial_end >= today) flags.push(`In prova fino al ${advDate(r.trial_end)}`);
+      if (r.cancel_by && r.cancel_by >= today) flags.push(`Decidi entro il ${advDate(r.cancel_by)}`);
+      if (flags.length && r.active) label.append(el("small", "per-flag", flags.join(" · ")));
       const sign = k === "entrata" ? "+ " : k === "risparmio" ? "" : "− ";
       li.append(label, el("span", "value per-amt" + (k === "entrata" ? " in" : ""), sign + fmt(r.amount_cents)), el("span", "chev", "›"));
       li.addEventListener("click", () => (k === "risparmio" ? openWishAuto(r.wish_id ? (wish || { id: r.wish_id, name: r.description, price_cents: 0, saved_cents: 0 }) : poolItem()) : openRecSheet(r)));
@@ -3989,16 +4055,21 @@ async function renderUpcoming() {
   const today = isoDate(new Date());
   const lim = isoDate(new Date(Date.now() + 7 * 864e5));
   const items = recs.map((r) => ({ r, d: recNext(r, r.last_date && r.last_date > today ? r.last_date : today) }))
-    .filter((x) => x.d && x.d > today && x.d <= lim).sort((a, b) => a.d.localeCompare(b.d)).slice(0, 4);
+    .concat(recs.flatMap((r) => [ // 0.6.2: fine della prova e data per disdire
+      r.trial_end ? { r, d: r.trial_end, note: "fine prova" } : null,
+      r.cancel_by ? { r, d: r.cancel_by, note: "decidi se disdire" } : null,
+    ].filter(Boolean)))
+    .filter((x) => x.d && x.d > today && x.d <= lim && !(x.note === undefined && x.r.trial_end === x.d))
+    .sort((a, b) => a.d.localeCompare(b.d)).slice(0, 5);
   $("upcoming").hidden = !items.length;
   const tomorrow = isoDate(new Date(Date.now() + 864e5));
-  $("up-list").replaceChildren(...items.map(({ r, d }) => {
+  $("up-list").replaceChildren(...items.map(({ r, d, note }) => {
     const li = el("li");
     const sd = shortDay(d);
     const when = el("span", "up-when", d === tomorrow ? "Domani" : sd[0].toUpperCase() + sd.slice(1));
-    const name = r.kind === "risparmio" ? `Risparmio · ${r.wish_id ? r.description : POOL_NAME}` : r.description;
+    const name = r.kind === "risparmio" ? `Risparmio · ${r.wish_id ? r.description : POOL_NAME}` : note ? `${r.description} · ${note}` : r.description;
     const sign = r.kind === "entrata" ? "+ " : r.kind === "risparmio" ? "" : "− ";
-    li.append(when, el("span", "up-name", name), el("span", "up-amt" + (r.kind === "entrata" ? " in" : ""), sign + fmt(r.amount_cents)));
+    li.append(when, el("span", "up-name" + (note ? " up-note" : ""), name), el("span", "up-amt" + (r.kind === "entrata" ? " in" : ""), sign + fmt(r.amount_cents)));
     return li;
   }));
 }
@@ -4137,6 +4208,7 @@ $("wauto-stop").addEventListener("click", async () => {
 // =========================================================
 const NT_TYPES = [
   { id: "periodici", name: "Periodici in arrivo", sub: "Il giorno prima: abbonamenti, pagamenti, entrate, risparmio", color: "#ff2d55" },
+  { id: "prove", name: "Prove e disdette", sub: "Prima che finisca una prova gratuita o scada la data per disdire", color: "#ff9500" },
   { id: "mese", name: "Inizio mese", sub: "Il 1°: recap del mese passato e avanzo del budget", color: "#34c759" },
   { id: "anticipi", name: "Anticipi in ritardo", sub: "Quote non restituite dopo 30 giorni", color: "#007aff" },
   { id: "backup", name: "Promemoria backup", sub: "Quando è ora del backup, come in Impostazioni › Backup", color: "#30b0c7" },
@@ -4248,6 +4320,18 @@ async function upcomingNotifs() {
       if (!list.length) continue;
       const names = list.map((r) => `${r.kind === "risparmio" ? (r.wish_id ? r.description : POOL_NAME) : r.description} ${fmt(r.amount_cents)}`);
       out.push({ when: at(day), title: list.length === 1 ? "Domani" : `Domani, ${list.length} periodici`, body: names.join(" · ") });
+    }
+  }
+  if (c.types.prove) {
+    const recs = (await loadRecurring()).filter((r) => r.active && r.is_subscription);
+    for (const r of recs) {
+      for (const [d, kind] of [[r.trial_end, "trial"], [r.cancel_by, "cancel"]]) {
+        if (!d) continue;
+        const notice = isoDate(new Date(Date.parse(d + "T12:00") - (r.notice_days || 3) * 864e5));
+        out.push(kind === "trial"
+          ? { when: at(notice), title: `La prova di ${r.description} sta finendo`, body: `Finisce il ${advDate(d)}: poi ${fmt(r.amount_cents)} ${r.frequency === "anno" ? "all'anno" : "al mese"}. Se non ti serve, disdici prima` }
+          : { when: at(notice), title: `${r.description}: decidi se tenerlo`, body: `Entro il ${advDate(d)} scegli se disdire: costa ${fmt(r.amount_cents)} ${r.frequency === "anno" ? "all'anno" : "al mese"}` });
+      }
     }
   }
   if (c.types.mese) {

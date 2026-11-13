@@ -101,7 +101,7 @@ const addDays = (s: string, n: number) => { const [y, m, d] = s.split("-").map(N
 const daysIn = (y: number, m0: number) => new Date(Date.UTC(y, m0 + 1, 0)).getUTCDate();
 type Rec = { id: string; user_id: string; kind: string; category_id: string | null; description: string; amount_cents: number;
   frequency: string; day_of_month: number; month_of_year: number | null; start_date: string | null; last_date: string | null;
-  active: boolean; wish_id: string | null };
+  active: boolean; wish_id: string | null; is_subscription?: boolean; trial_end?: string | null; cancel_by?: string | null; notice_days?: number };
 export function recNext(r: Rec, after: string | null = null): string | null {
   if (!r.start_date) return null;
   const from = after && after > r.start_date ? after : r.start_date;
@@ -118,7 +118,7 @@ export function recNext(r: Rec, after: string | null = null): string | null {
 const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
 const eur = (c: number) => new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", useGrouping: "always" } as Intl.NumberFormatOptions).format(c / 100);
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
-const NT_DEFAULT = { hour: 9, types: { periodici: true, mese: true, anticipi: true, backup: true, anno: true } };
+const NT_DEFAULT = { hour: 9, types: { periodici: true, prove: true, mese: true, anticipi: true, backup: true, anno: true } };
 const SUBJECT = "https://itscecio.github.io/flunora/";
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -213,6 +213,21 @@ export async function handler(req: Request, testDb?: any, testNow?: Date): Promi
       if (due.length) {
         out.push({ kind: "periodici", ref: tomorrow, title: due.length === 1 ? "Domani" : `Domani, ${due.length} periodici`,
           body: due.map((r) => `${r.kind === "risparmio" && !r.wish_id ? "Salvadanaio" : r.description} ${eur(r.amount_cents)}`).join(" · "), url: "./#abbonamenti" });
+      }
+    }
+    // 0.6.2: qualche giorno prima della fine di una prova gratuita o della data per disdire
+    if (types.prove) {
+      const label = (r: Rec) => r.frequency === "anno" ? "all'anno" : "al mese";
+      const giorno = (d: string) => { const [y, m, dd] = d.split("-").map(Number); return `${dd} ${MESI[m - 1]}`; };
+      for (const r of ((recs || []) as Rec[]).filter((x) => x.user_id === uid && x.is_subscription)) {
+        for (const [d, k] of [[r.trial_end, "trial"], [r.cancel_by, "cancel"]] as const) {
+          if (!d || addDays(d, -(r.notice_days ?? 3)) !== now.date) continue;
+          out.push(k === "trial"
+            ? { kind: "prove", ref: `${r.id}-trial-${d}`, title: `La prova di ${r.description} sta finendo`,
+                body: `Finisce il ${giorno(d)}: poi ${eur(r.amount_cents)} ${label(r)}. Se non ti serve, disdici prima`, url: "./#abbonamenti" }
+            : { kind: "prove", ref: `${r.id}-cancel-${d}`, title: `${r.description}: decidi se tenerlo`,
+                body: `Entro il ${giorno(d)} scegli se disdire: costa ${eur(r.amount_cents)} ${label(r)}`, url: "./#abbonamenti" });
+        }
       }
     }
     if (types.mese && now.d === 1) {

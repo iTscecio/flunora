@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611131508">
+  <link rel="stylesheet" href="css/style.css?v=202611131544">
 </head>
 <body>
 
@@ -424,6 +424,15 @@
           <select id="f-repeat"><option value="">Mai</option><option value="mese">Ogni mese</option><option value="anno">Ogni anno</option></select></label>
         <label class="group-row" id="sub-row" hidden><span>Tipo</span>
           <select id="f-sub"><option value="1">Abbonamento</option><option value="0">Pagamento periodico</option></select></label>
+      </div>
+      <!-- 0.6.2: prova gratuita e promemoria per disdire (solo abbonamenti) -->
+      <div class="group sub-extra" id="sub-extra" hidden>
+        <label class="group-row"><span>Prova gratuita</span><span class="switch"><input type="checkbox" id="f-trial" aria-label="Prova gratuita"><span></span></span></label>
+        <label class="group-row" id="trial-row" hidden><span>Finisce il</span><input type="date" id="f-trial-end"></label>
+        <label class="group-row"><span>Promemoria per disdire</span><span class="switch"><input type="checkbox" id="f-cancel" aria-label="Promemoria per disdire"><span></span></span></label>
+        <label class="group-row" id="cancel-row" hidden><span>Decidi entro il</span><input type="date" id="f-cancel-by"></label>
+        <label class="group-row" id="notice-row" hidden><span>Avvisami</span>
+          <select id="f-notice"><option value="1">Il giorno prima</option><option value="3">3 giorni prima</option><option value="7">7 giorni prima</option></select></label>
       </div>
       <p id="rep-hint" class="secondary small foot" hidden></p>
 
@@ -834,11 +843,11 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611131508"></script>
-  <script src="js/releases.js?v=202611131508"></script>
-  <script src="js/icons.js?v=202611131508"></script>
-  <script src="js/app.js?v=202611131508"></script>
-  <script src="js/bank-bdp.js?v=202611131508"></script>
-  <script src="js/import.js?v=202611131508"></script>
+  <script src="js/config.js?v=202611131544"></script>
+  <script src="js/releases.js?v=202611131544"></script>
+  <script src="js/icons.js?v=202611131544"></script>
+  <script src="js/app.js?v=202611131544"></script>
+  <script src="js/bank-bdp.js?v=202611131544"></script>
+  <script src="js/import.js?v=202611131544"></script>
 </body>
 </html>
