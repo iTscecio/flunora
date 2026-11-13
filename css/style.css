@@ -1288,3 +1288,67 @@ body.is-locked { overflow: hidden; }
 #wauto-quick { margin: 4px 0 12px; }
 #wauto-stop[hidden] { display: none; }
 #wauto-stop { width: 100%; margin-top: 16px; }
+
+/* =========================================================
+   0.6.1 — NOTIFICHE E RIEPILOGO DELL'ANNO
+   ========================================================= */
+.nt-status { display: grid; grid-template-columns: auto 1fr; gap: 12px 14px; align-items: center; padding: 16px; }
+.nt-ico { width: 44px; height: 44px; border-radius: 12px; background: #8e8e93; display: grid; place-items: center; }
+.nt-status.on .nt-ico { background: #ff3b30; }
+.nt-ico svg { width: 26px; height: 26px; fill: none; stroke: #fff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.nt-text { display: grid; gap: 3px; }
+.nt-text strong { font-size: 17px; }
+.nt-btn { grid-column: 1 / -1; min-width: 0; width: 100%; }
+.nt-btn.ghost { background: var(--fill); color: var(--bad); }
+.nt-btn[hidden] { display: none; }
+#nt-types li .label { display: grid; gap: 2px; }
+#nt-types li .label small { color: var(--secondary); font-size: 13px; }
+.nt-next { padding: 6px; display: grid; gap: 6px; background: transparent; }
+.nt-next[hidden], #nt-next-title[hidden] { display: none; }
+.nt-next > li.nt-item { display: grid !important; align-items: start; min-height: 0; gap: 2px; padding: 10px 12px; border-radius: 16px; background: var(--card); box-shadow: 0 1px 3px rgba(0, 0, 0, .08); }
+.nt-next .nt-item-head { width: 100%; display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+.nt-app { display: flex; align-items: center; gap: 6px; font-size: 12px; letter-spacing: .3px; color: var(--secondary); }
+.nt-app img { width: 18px; height: 18px; border-radius: 5px; }
+.nt-when { font-size: 12px; color: var(--secondary); }
+.nt-item strong { font-size: 15px; }
+.nt-body { font-size: 15px; }
+#nt-test[hidden] { display: none; }
+.yr-open { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; text-align: left; color: var(--text); font: inherit; cursor: pointer; padding: 14px 16px; }
+.yr-open .ph-ico { width: 40px; height: 40px; border-radius: 11px; flex: none; }
+.yr-open .ph-ico svg { width: 24px; height: 24px; }
+.yr-open-t { display: grid; gap: 2px; flex: 1; }
+.yr-open-t strong { font-size: 17px; }
+.yr-open .chev { color: var(--secondary); font-size: 22px; }
+.yr-panel .settings-body { display: grid; gap: 12px; }
+.yr-hero { display: grid; gap: 4px; padding: 18px 16px; }
+.yr-hero .lbl { font-size: 15px; margin-top: 6px; }
+.yr-hero .big { font-size: 40px; font-weight: 800; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+.yr-hero .big.neg { color: var(--bad); }
+.yr-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.yr-kpi { display: grid; gap: 2px; }
+.yr-kpi strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+.yr-kpi.in strong { color: var(--good); }
+.yr-sec { display: grid; gap: 10px; padding: 16px; }
+.yr-sec h3 { margin: 0; font-size: 17px; }
+.yr-sec p { margin: 0; line-height: 1.45; }
+.yr-row { display: grid; grid-template-columns: 1fr auto; column-gap: 8px; }
+.yr-row small { grid-column: 1 / -1; }
+.yr-row + .yr-row { border-top: .5px solid var(--separator); padding-top: 10px; }
+.yr-cat { display: grid; gap: 6px; }
+.yr-cat-head { display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px; align-items: center; }
+.yr-cat-head small { width: 36px; text-align: right; }
+.yr-bar { height: 6px; border-radius: 3px; background: var(--fill); overflow: hidden; }
+.yr-bar i { display: block; height: 100%; border-radius: 3px; }
+.yr-foot { margin: 4px 0 24px; }
+@media print {
+  body.print-yr > *:not(#view-app), body.print-yr #view-app > *:not(#yr) { display: none !important; }
+  body.print-yr #yr { position: static !important; transform: none !important; overflow: visible !important; height: auto !important; }
+  body.print-yr #yr .settings-head { display: none !important; }
+  body.print-yr .card { box-shadow: none !important; border: 1px solid #ddd; break-inside: avoid; }
+}
+
+.nt-next > li.nt-item::before { display: none; }
+.yr-open[hidden] { display: none; }
+.recap-acts { display: flex; align-items: center; gap: 10px; }
+.recap-acts .link-btn { font-size: 15px; }
+#yr { z-index: 37; }

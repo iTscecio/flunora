@@ -2,6 +2,12 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.6.1
+- Notifiche su iPhone (Web Push): `sw.js` (solo notifiche, nessuna cache), Impostazioni › Notifiche con stato (attive, spente, bloccate, da aprire dalla schermata Home, non supportate), cinque tipi (periodici di domani, inizio mese, anticipi in ritardo, backup, riepilogo dell'anno), ora (6–23, di base 9), "In programma" con le prossime notifiche e "Manda una notifica di prova". Iscrizione in `push_subscriptions`; scelte in `user_settings.data.notify`
+- Funzione Supabase `notifiche` (`supabase/functions/notifiche/index.ts`), chiamata ogni ora da pg_cron: aggiunge periodici e risparmio periodico dei desideri arrivati a scadenza (il Salvadanaio lo aggiunge l'app), poi manda le notifiche all'ora scelta (ora di Roma), una sola volta per tipo e periodo (`notify_log`); toglie le iscrizioni scadute (404/410). Web Push con sola WebCrypto (aes128gcm, VAPID ES256); chiavi create dalla funzione e salvate in `push_keys` (non leggibile dall'app; `push_public_key()` dà solo la pubblica). Prova: `{ test: true }` con l'accesso di chi la chiede
+- Recap (IMPR-006): Impostazioni › Recap con anni e mesi (fino a 24); recap del mese (rimasti, entrate/uscite/investito, confronto con il mese prima, budget, categorie, abbonamenti, desideri, anticipi) e dell'anno (mese migliore, più caro, uscite medie); PDF con la stampa. Dashboard: recap del mese nei primi 3 giorni con "Dettagli", carta dell'anno dal 1° al 10 gennaio
+- Supabase (`0.6.1_notifiche.sql`, dopo aver creato la funzione): tabelle `push_subscriptions`, `push_keys`, `notify_log`; estensioni pg_cron e pg_net; giro `flunora-notifiche` ogni ora; prima chiamata per creare le chiavi
+
 ## 0.6.0
 - Sezione Abbonamenti (non più segnaposto): riepilogo "al mese" per gruppo (gli annuali divisi per 12) e quattro gruppi — Abbonamenti, Pagamenti periodici, Entrate periodiche, Desideri — con la descrizione sulla riga ("Pagamento periodico", "Entrata periodica", "Risparmio periodico"), la regola ("Ogni mese, il 2", "Ogni anno, il 20 marzo", "l'ultimo giorno") e la prossima data; "+ Nuovo" apre il pannello + come abbonamento
 - Pannello +: riga "Ripeti" (Mai / Ogni mese / Ogni anno) per i movimenti nuovi e, per le uscite, "Tipo" (Abbonamento / Pagamento periodico). Il giorno è quello della data; il 31 diventa l'ultimo giorno dei mesi corti. Salvando nasce il periodico; se la data è oggi o passata il primo movimento arriva subito
