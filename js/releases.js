@@ -5,7 +5,7 @@
 // =========================================================
 window.RELEASES = [
   {
-    version: "0.6.2", date: "novembre 2026",
+    version: "0.6.2", date: "13 novembre 2026",
     items: [
       "Abbonamenti con prova gratuita: scegli quando finisce e il primo addebito arriva quel giorno; nella lista compare \"In prova fino al …\" (IMPR-009)",
       "Promemoria per disdire: una data entro cui decidere se tenere un abbonamento, utile per gli annuali che si rinnovano da soli (IMPR-010)",
