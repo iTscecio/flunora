@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.7.0";
+const APP_VERSION = "0.8.0";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -173,7 +173,7 @@ function traduciErrore(m) {
 // =========================================================
 async function startApp() {
   $("set-email").textContent = state.user.email || "";
-  await Promise.all([loadCategories(), loadSettings()]);
+  await Promise.all([loadCategories(), loadSettings(), loadAccounts()]); // 0.8.0: conti
   renderTabbar();
   route();
   runRecurring(); // 0.6.0: aggiunge i movimenti periodici arrivati a scadenza
@@ -394,7 +394,7 @@ async function loadMonth() {
     clearSearch();
   }
   $("month-label").textContent = `${MESI[state.month.getMonth()]} ${state.month.getFullYear()}`;
-  const [txRes, bRes, hRes] = await Promise.all([
+  const [txRes, bRes, hRes, xRes] = await Promise.all([
     sb.from("transactions").select("*")
       .gte("date", isoDate(state.month)).lt("date", isoDate(addMonths(state.month, 1)))
       .order("date", { ascending: false }).order("created_at", { ascending: false }),
@@ -402,11 +402,15 @@ async function loadMonth() {
     // 0.4.2: spese dei 3 mesi precedenti, per il confronto con il solito
     sb.from("transactions").select("category_id,amount_cents,date").eq("kind", "uscita")
       .gte("date", isoDate(addMonths(state.month, -USUAL_MONTHS))).lt("date", isoDate(state.month)),
+    // 0.8.0: trasferimenti tra i conti (senza lo script 0.8.0 non ce ne sono)
+    sb.from("transfers").select("*").gte("date", isoDate(state.month)).lt("date", isoDate(addMonths(state.month, 1)))
+      .order("date", { ascending: false }),
   ]);
   if (txRes.error) { toast("Errore movimenti: " + txRes.error.message); return; }
   if (shown !== state.month.getTime()) return; // mese cambiato nel frattempo
   state.history = hRes.error ? [] : hRes.data || [];
   state.transactions = txRes.data;
+  state.monthTransfers = xRes.error ? [] : xRes.data || [];
   state.budgetMonth = bRes.error ? null : (bRes.data?.amount_cents ?? null);
   state.budgetTableMissing = !!bRes.error;
   renderKpis();
@@ -674,7 +678,12 @@ function renderList() {
   const box = $("tx-list");
   box.replaceChildren();
   openRow = null;
-  const rows = visibleRows();
+  // 0.8.0: i trasferimenti compaiono tra i movimenti del giorno (senza filtro), ma non contano
+  const q = (state.search || "").toLowerCase();
+  const xfers = state.filterCat ? [] : (state.monthTransfers || []).filter((x) => !q
+    || [x.description, accName(x.from_account), accName(x.to_account), fmt(x.amount_cents)].some((v) => v && String(v).toLowerCase().includes(q)))
+    .map((x) => ({ ...x, _xfer: true }));
+  const rows = visibleRows().concat(xfers).sort((a, b) => b.date.localeCompare(a.date));
   box.hidden = rows.length === 0;
   const filtered = !!(state.filterCat || state.search);
   $("tx-empty").hidden = rows.length > 0;
@@ -710,6 +719,7 @@ function renderList() {
     const ul = el("ul", "card list");
 
     for (const tx of g.items) {
+      if (tx._xfer) { ul.append(xferRow(tx)); continue; } // 0.8.0
       const cat = catById(tx.category_id);
       const li = el("li", "swipe" + (state.selected.has(tx.id) ? " selected" : ""));
       li.dataset.id = tx.id;
@@ -729,7 +739,7 @@ function renderList() {
       const tipo = { entrata: "Entrata", uscita: "", investimento: "Investimento" }[tx.kind];
       grow.append(
         el("div", "title", tx.description || cat?.name || "Movimento"),
-        el("div", "sub", [tipo, cat?.name, tx.recurring_id ? "↻ periodico" : "",
+        el("div", "sub", [tipo, cat?.name, tx.account_id ? accName(tx.account_id) : "", tx.recurring_id ? "↻ periodico" : "",
           tx.fuel_liters ? fmtL(tx.fuel_liters) : "", tx.odometer_km != null ? fmtKm(tx.odometer_km) : ""].filter(Boolean).join(" · ")) // 0.7.0
       );
       const amt = el("span", "amt" + (tx.kind === "entrata" ? " in" : ""),
@@ -937,6 +947,7 @@ function renderChips() {
   add.addEventListener("click", () => openCatEditor(null, state.kind, true));
   box.append(add);
   syncCarBox(); // 0.7.0: litri e km per le categorie dell'auto
+  syncAccRow(); // 0.8.0: il conto ricordato per la categoria
 }
 
 // data proposta: oggi se si guarda il mese corrente, altrimenti il 1° del mese mostrato
@@ -948,6 +959,7 @@ function defaultDate() {
 
 function openSheet(tx) {
   state.editing = tx;
+  state.accPicked = undefined; // 0.8.0: conto scelto a mano in questo pannello
   setMsg($("sheet-msg"), "");
   $("sheet-title").textContent = tx ? "Modifica movimento" : "Nuovo movimento";
   $("sheet-foot").hidden = !tx; // 0.5.1: Duplica ed Elimina solo in modifica
@@ -1848,6 +1860,7 @@ $("sheet").addEventListener("submit", async (e) => {
     description: $("f-desc").value.trim() || null,
   };
   if (!repeat && !carFields(row)) return; // 0.7.0: litri, pieno e km
+  if (!repeat) accFields(row);             // 0.8.0: il conto del movimento
   if (repeat) return saveNewRec(row, repeat); // 0.6.0: nuovo movimento periodico
   const save = $("sheet-save");
   save.disabled = true;
@@ -1859,7 +1872,8 @@ $("sheet").addEventListener("submit", async (e) => {
   if (!error && state.wishBuying) state.wishBuying.txId = saved?.id || null;
   save.disabled = false;
   if (error) {
-    setMsg(msg, /fuel_liters|odometer_km|fuel_full/i.test(error.message) ? "Per litri e km prima esegui lo script della 0.7.0 in Supabase."
+    setMsg(msg, /account_id/i.test(error.message) ? "Per scegliere il conto prima esegui lo script della 0.8.0 in Supabase."
+      : /fuel_liters|odometer_km|fuel_full/i.test(error.message) ? "Per litri e km prima esegui lo script della 0.7.0 in Supabase."
       : "Errore nel salvataggio: " + traduciErrore(error.message), true);
     return;
   }
@@ -3005,6 +3019,8 @@ async function loadBalance() {
       <span class="cta">Imposta il saldo iniziale</span>`;
     card.setAttribute("aria-label", "Imposta il saldo iniziale");
     $("saldo-eye").hidden = true;
+    state.accBal = null;
+    renderAccStrip(); renderAccPick(); // 0.8.0
     return;
   }
   $("saldo-eye").hidden = false;
@@ -3013,9 +3029,12 @@ async function loadBalance() {
     card.replaceChildren(el("span", "lbl", "Saldo totale"), el("span", "big", "–"), el("span", "when", ""));
   }
   try {
-    const [cents] = await Promise.all([computeBalance(o), loadAdvanceOpen(), loadWishSaved()]);
+    const [all] = await Promise.all([computeBalance(o), loadAdvanceOpen(), loadWishSaved(), loadAccounts()]);
     if (!opening()) return;
-    state.balance = cents;
+    // 0.8.0: saldo di ogni conto; il totale è la loro somma
+    state.accBal = await computeAccounts(o, all).catch(() => null);
+    state.balance = state.accBal ? sumPer(state.accBal) : all;
+    renderAccPick();
     showBalance(false);
   } catch (err) {
     state.balance = null;
@@ -3043,11 +3062,23 @@ function showBalance(fromZero) {
   if (!big || cents == null) return;
   const oggi = new Date().toLocaleDateString("it-IT", { day: "numeric", month: "long" });
   updateEye();
+  renderAccStrip(); // 0.8.0 (bozza A): i saldi dei conti seguono l'occhio
+  const pk = pickedBalance(); // 0.8.0 (bozza B): un conto alla volta
+  if (pk && !saldoHidden()) {
+    big.classList.remove("masked");
+    if (fromZero) big._value = 0;
+    card.querySelector(".lbl").textContent = pk.acc.name;
+    countTo(big, pk.cents, (v) => (v < 0 ? "− " : "") + fmt(Math.abs(v)));
+    big.classList.toggle("neg", pk.cents < 0);
+    card.querySelector(".when").textContent = `Tutti i conti ${signedFmt(cents)} · oggi, ${oggi}`;
+    card.setAttribute("aria-label", `${pk.acc.name} ${signedFmt(pk.cents)}. Tocca per i conti`);
+    return;
+  }
   if (saldoHidden()) {
     cancelAnimationFrame(big._raf);
     big._value = 0;                                  // al prossimo "mostra" l'importo scorre da zero
     big.textContent = SALDO_MASK;
-    card.querySelector(".lbl").textContent = wishesOn() && state.wishSavedCents ? "Disponibile" : "Saldo totale";
+    card.querySelector(".lbl").textContent = pk ? pk.acc.name : wishesOn() && state.wishSavedCents ? "Disponibile" : "Saldo totale";
     big.classList.remove("neg");                     // nemmeno il rosso deve far capire se è negativo
     big.classList.add("masked");
     card.querySelector(".when").textContent = `Oggi, ${oggi}`;
@@ -3075,14 +3106,16 @@ $("saldo-eye").addEventListener("click", () => {
 });
 
 function openingLabel() {
+  if (multiAcc()) return `${activeAccounts().length + 1} conti`; // 0.8.0
   const o = opening();
   if (!o) return "Non impostato";
   const [y, m, d] = o.date.split("-").map(Number);
   return `${(o.cents < 0 ? "− " : "") + fmt(Math.abs(o.cents))} · ${new Date(y, m - 1, d).toLocaleDateString("it-IT", { day: "numeric", month: "short" })}`;
 }
 
-$("saldo-card").addEventListener("click", openOpeningSheet);
-$("open-opening").addEventListener("click", openOpeningSheet);
+// 0.8.0: con più conti la carta del saldo apre i Conti; dalle Impostazioni si aprono sempre
+$("saldo-card").addEventListener("click", () => (opening() && multiAcc() ? openAccSheet() : openOpeningSheet()));
+$("open-opening").addEventListener("click", openAccSheet);
 $("opening-cancel").addEventListener("click", closeOpeningSheet);
 $("opening-backdrop").addEventListener("click", closeOpeningSheet);
 
@@ -3159,12 +3192,13 @@ async function fetchAllOptional(table, orderCol) {
 const stripUser = (rows) => rows.map(({ user_id, ...r }) => r);
 
 async function buildBackup() {
-  const [categories, transactions, budgets, recurring, importRules, advances, advShares, wishes] = await Promise.all([
+  const [categories, transactions, budgets, recurring, importRules, advances, advShares, wishes, accounts, transfers] = await Promise.all([
     fetchAll("categories"), fetchAll("transactions"),
     fetchAllOptional("budgets", "month"), fetchAllOptional("recurring"),
     fetchAllOptional("import_rules", "pattern"),
     fetchAllOptional("advances"), fetchAllOptional("advance_shares"), // 0.4.5
     fetchAllOptional("wishes"), // 0.5.0
+    fetchAllOptional("accounts"), fetchAllOptional("transfers"), // 0.8.0
   ]);
   const { sections, budget_cents, opening, backup_reminder_days } = state.settingsData || {};
   return {
@@ -3191,8 +3225,12 @@ async function buildBackup() {
         name: w.name, price_cents: w.price_cents, saved_cents: w.saved_cents, due_date: w.due_date, link: w.link,
         note: w.note, sort_order: w.sort_order, status: w.status, closed_on: w.closed_on,
       })),
+      // 0.8.0: conti e trasferimenti (gli id dei conti si ritrovano per nome al ripristino)
+      accounts: accounts.map((a) => ({ id: a.id, name: a.name, type: a.type, opening_cents: a.opening_cents, opening_date: a.opening_date, sort_order: a.sort_order, archived: a.archived })),
+      transfers: transfers.map((x) => ({ date: x.date, amount_cents: x.amount_cents, from_account: x.from_account, to_account: x.to_account, description: x.description, import_key: x.import_key })),
       settings: { sections: sections || state.sections, budget_cents, opening, backup_reminder_days, wish_pool_cents: state.settingsData.wish_pool_cents || 0,
-        car: carForBackup(recurring) }, // 0.7.0
+        car: carForBackup(recurring), // 0.7.0
+        main_name: state.settingsData.main_name, acc_view: state.settingsData.acc_view }, // 0.8.0
     },
   };
 }
@@ -3529,7 +3567,7 @@ async function runRestore() {
     if (r.mode === "replace") {
       state.settingsData = { ...bs, ...keep };
     } else {
-      for (const k of ["budget_cents", "opening", "backup_reminder_days", "wish_pool_cents", "car"]) {
+      for (const k of ["budget_cents", "opening", "backup_reminder_days", "wish_pool_cents", "car", "main_name", "acc_view"]) {
         if (state.settingsData[k] == null && bs[k] != null) state.settingsData[k] = bs[k];
       }
     }
@@ -3823,6 +3861,7 @@ function syncRepRow() {
   $("rep-row").hidden = !show;
   syncSubRow();
   updateRepHint();
+  syncAccRow(); // 0.8.0
 }
 // "Tipo" (abbonamento o pagamento periodico) solo per le uscite che si ripetono
 function syncSubRow() {
@@ -4814,6 +4853,391 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) { hiddenAt = Date.now(); return; }
   if (state.user && lockCfg() && hiddenAt && Date.now() - hiddenAt > LOCK_AFTER_MS) showLock();
 });
+
+// =========================================================
+// 0.8.0 — PIÙ CONTI
+// Il conto corrente è quello di sempre: i movimenti senza conto (account_id vuoto), con il
+// saldo iniziale nelle impostazioni (opening) e il nome in settingsData.main_name.
+// Gli altri conti (Contanti, carte o altri conti) stanno nella tabella accounts con il loro
+// saldo iniziale. I trasferimenti stanno nella tabella transfers: non sono né spese né
+// entrate, cambiano solo i saldi dei conti (conto vuoto = conto corrente).
+// =========================================================
+const ACC_TYPES = {
+  corrente: { icon: "bank", color: "#30b0c7", label: "Conto corrente" },
+  contanti: { icon: "banknote", color: "#34c759", label: "Contanti" },
+  altro:    { icon: "card", color: "#5856d6", label: "Carta o altro conto" },
+};
+const mainAcc = () => ({ id: null, name: state.settingsData?.main_name || "Conto corrente", type: "corrente", main: true });
+const activeAccounts = () => (state.accounts || []).filter((a) => !a.archived);
+const multiAcc = () => activeAccounts().length > 0;
+const accById = (id) => (id ? (state.accounts || []).find((a) => a.id === id) : mainAcc());
+const accName = (id) => accById(id)?.name || "Conto";
+function accIcon(a, size = "") {
+  const t = ACC_TYPES[a?.type] || ACC_TYPES.altro;
+  return catIcon({ icon: t.icon, color: t.color }, size);
+}
+const accView = () => (state.settingsData?.acc_view === "conto" ? "conto" : "totale");
+
+async function loadAccounts() {
+  const { data, error } = await sb.from("accounts").select("*").order("sort_order").order("created_at");
+  state.accountsMissing = !!error;            // script 0.8.0 non ancora eseguito
+  state.accounts = error ? [] : data;
+  return state.accounts;
+}
+
+async function fetchRange(q) { // tutte le righe di una query, a pagine di 1000
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await q().range(from, from + 999);
+    if (error) throw error;
+    out.push(...data);
+    if (data.length < 1000) return out;
+  }
+}
+
+// saldi dei conti: `allCents` è il saldo calcolato come prima (tutti i movimenti dopo il saldo
+// iniziale del conto corrente); qui si tolgono i movimenti degli altri conti e si aggiungono i trasferimenti
+async function computeAccounts(o, allCents) {
+  if (!state.accounts?.length) return null;
+  const today = isoDate(new Date());
+  const [txs, xf, sh] = await Promise.all([
+    fetchRange(() => sb.from("transactions").select("date, kind, amount_cents, account_id").not("account_id", "is", null).lte("date", today).order("date")),
+    fetchRange(() => sb.from("transfers").select("date, amount_cents, from_account, to_account").lte("date", today).order("date")),
+    sb.from("advance_shares").select("amount_cents, closed_on").eq("status", "contanti").lte("closed_on", today),
+  ]);
+  const flow = (t) => (t.kind === "entrata" ? t.amount_cents : -t.amount_cents);
+  const per = new Map();
+  let main = allCents - txs.filter((t) => t.date > o.date).reduce((a, t) => a + flow(t), 0);
+  main += xf.filter((x) => x.date > o.date).reduce((a, x) => a + (x.to_account == null ? x.amount_cents : 0) - (x.from_account == null ? x.amount_cents : 0), 0);
+  per.set(null, main);
+  // le restituzioni degli anticipi in contanti finiscono nei Contanti
+  const cash = activeAccounts().find((a) => a.type === "contanti");
+  for (const a of state.accounts) {
+    let c = Number(a.opening_cents) || 0;
+    c += txs.filter((t) => t.account_id === a.id && t.date > a.opening_date).reduce((s, t) => s + flow(t), 0);
+    c += xf.filter((x) => x.date > a.opening_date).reduce((s, x) => s + (x.to_account === a.id ? x.amount_cents : 0) - (x.from_account === a.id ? x.amount_cents : 0), 0);
+    if (cash && a.id === cash.id && !sh.error) c += sh.data.filter((q) => q.closed_on > a.opening_date).reduce((s, q) => s + q.amount_cents, 0);
+    per.set(a.id, c);
+  }
+  return per;
+}
+const sumPer = (per) => [...per.values()].reduce((a, b) => a + b, 0);
+
+// ---------- Dashboard ----------
+const signedFmt = (c) => (c < 0 ? "− " : "") + fmt(Math.abs(c));
+const pickedAcc = () => { try { return localStorage.getItem("flunora.accPick") || "tutti"; } catch { return "tutti"; } };
+
+// bozza A: sotto il saldo, un saldo per ogni conto e "Sposta soldi"
+function renderAccStrip() {
+  const box = $("acc-strip");
+  const per = state.accBal;
+  const on = !!per && multiAcc() && accView() === "totale" && !!opening();
+  box.hidden = !on;
+  $("saldo-wrap").classList.toggle("has-strip", on);
+  if (!on) return;
+  const hide = saldoHidden();
+  const rows = [mainAcc(), ...activeAccounts()].map((a) => {
+    const b = el("button", "acc-line");
+    b.type = "button";
+    const c = per.get(a.id) ?? 0;
+    b.append(accIcon(a, "sm"), el("span", "nm", a.name), el("span", "v" + (c < 0 && !hide ? " neg" : ""), hide ? "****** €" : signedFmt(c)));
+    b.addEventListener("click", () => openAccEdit(a));
+    return b;
+  });
+  const mv = el("button", "acc-move");
+  mv.type = "button";
+  mv.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 8h14l-3-3M20 16H6l3 3"/></svg>';
+  mv.append("Sposta soldi tra conti");
+  mv.addEventListener("click", () => openXfer());
+  box.replaceChildren(...rows, mv);
+}
+
+// bozza B: in alto si sceglie il conto; la carta mostra il saldo di quel conto
+function renderAccPick() {
+  const box = $("acc-pick");
+  const per = state.accBal;
+  const on = !!per && multiAcc() && accView() === "conto" && !!opening();
+  box.hidden = !on;
+  if (!on) return;
+  const cur = pickedAcc();
+  const items = [["tutti", "Tutti"], ...[mainAcc(), ...activeAccounts()].map((a) => [a.id || "main", a.name])];
+  if (!items.some(([k]) => k === cur)) try { localStorage.setItem("flunora.accPick", "tutti"); } catch {}
+  box.replaceChildren(...items.map(([k, label]) => {
+    const b = el("button", "chip" + (k === pickedAcc() ? " on" : ""), label);
+    b.type = "button";
+    b.addEventListener("click", () => {
+      try { localStorage.setItem("flunora.accPick", k); } catch {}
+      renderAccPick();
+      showBalance(true);
+    });
+    return b;
+  }));
+}
+
+// saldo da mostrare con la bozza B (null = tutti, come prima)
+function pickedBalance() {
+  if (!state.accBal || !multiAcc() || accView() !== "conto") return null;
+  const k = pickedAcc();
+  if (k === "tutti") return null;
+  const id = k === "main" ? null : k;
+  if (id && !activeAccounts().some((a) => a.id === id)) return null;
+  return { acc: accById(id), cents: state.accBal.get(id) ?? 0 };
+}
+
+// ---------- Conti (Impostazioni e carta del saldo) ----------
+function openAccSheet() {
+  renderAccSheet();
+  openTopSheet("acc-sheet");
+  // i saldi possono essere cambiati: si ricalcolano senza aspettare la Dashboard
+  if (opening()) refreshAccBalances().then(renderAccSheet).catch(() => {});
+}
+async function refreshAccBalances() {
+  await loadAccounts();
+  const o = opening();
+  if (!o) { state.accBal = null; return; }
+  const all = await computeBalance(o);
+  state.accBal = (await computeAccounts(o, all)) || new Map([[null, all]]);
+}
+function renderAccSheet() {
+  const per = state.accBal;
+  const accs = [mainAcc(), ...(state.accounts || [])];
+  $("acc-list").replaceChildren(...accs.map((a) => {
+    const li = el("li", "tap");
+    const label = el("span", "label");
+    const sub = a.main
+      ? (opening() ? `Saldo iniziale al ${new Date(opening().date + "T12:00").toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" })} · estratto conto` : "Saldo iniziale da impostare")
+      : `${ACC_TYPES[a.type]?.label || "Conto"}${a.archived ? " · archiviato" : ""}`;
+    label.append(el("span", null, a.name), el("small", null, sub));
+    const c = per?.get(a.id);
+    li.append(accIcon(a), label, el("span", "value" + (c < 0 ? " neg" : ""), c == null ? "" : saldoHidden() ? "****** €" : signedFmt(c)), el("span", "chev", "›"));
+    if (a.archived) li.classList.add("archived");
+    li.addEventListener("click", () => openAccEdit(a));
+    return li;
+  }));
+  $("acc-xfer").hidden = !multiAcc();
+  const showView = multiAcc();
+  $("acc-view").hidden = !showView;
+  $("acc-view-title").hidden = !showView;
+  for (const b of $("acc-view").querySelectorAll("button")) b.classList.toggle("on", b.dataset.v === accView());
+  if (state.accountsMissing) $("acc-note").textContent = "Per aggiungere altri conti prima esegui lo script della 0.8.0 in Supabase.";
+}
+$("acc-view").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-v]");
+  if (!b) return;
+  state.settingsData.acc_view = b.dataset.v;
+  renderAccSheet();
+  await saveSettingsData("Scelta salvata solo su questo dispositivo");
+  if (state.page === "dashboard") { renderAccStrip(); renderAccPick(); showBalance(false); }
+});
+$("acc-close").addEventListener("click", () => closeTopSheet("acc-sheet"));
+$("acc-backdrop").addEventListener("click", () => closeTopSheet("acc-sheet"));
+$("acc-new").addEventListener("click", () => openAccEdit(null));
+$("acc-xfer").addEventListener("click", () => openXfer());
+
+// ---------- un conto ----------
+let accEdit = null;
+function openAccEdit(a) {
+  if (!a && state.accountsMissing) return toast("Prima esegui lo script della 0.8.0 in Supabase");
+  const main = !!a?.main;
+  const o = opening();
+  accEdit = { a, main, type: a?.type || (activeAccounts().some((x) => x.type === "contanti") ? "altro" : "contanti") };
+  $("accedit-title").textContent = a ? a.name : "Nuovo conto";
+  $("accedit-types").hidden = main || !!a;
+  $("accedit-name").value = a ? a.name : accEdit.type === "contanti" ? "Contanti" : "";
+  const cents = main ? o?.cents : a?.opening_cents;
+  $("accedit-amount").value = cents != null && (a || main) ? (cents < 0 ? "−" : "") + (Math.abs(cents) / 100).toFixed(2).replace(".", ",") : "";
+  $("accedit-date").value = (main ? o?.date : a?.opening_date) || isoDate(new Date());
+  $("accedit-foot").hidden = !a || main;
+  $("accedit-archive").textContent = a?.archived ? "Riattiva" : "Archivia";
+  $("accedit-note").textContent = main
+    ? "Il conto dell'estratto conto: i movimenti senza un altro conto e quelli importati finiscono qui. Il saldo iniziale è quanto c'era alla fine di quel giorno."
+    : accEdit.type === "contanti"
+      ? "Quanto avevi nel portafoglio alla fine di quel giorno. I prelievi al bancomat importati e le restituzioni degli anticipi in contanti finiscono qui."
+      : "Quanto c'era sul conto o sulla carta alla fine di quel giorno: da lì Flunora aggiunge movimenti e trasferimenti.";
+  setMsg($("accedit-msg"), "");
+  renderAccTypes();
+  openTopSheet("accedit-sheet");
+}
+function renderAccTypes() {
+  for (const b of $("accedit-types").querySelectorAll("button")) b.classList.toggle("on", b.dataset.t === accEdit.type);
+}
+$("accedit-types").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-t]");
+  if (!b) return;
+  const was = accEdit.type;
+  accEdit.type = b.dataset.t;
+  if (!$("accedit-name").value.trim() || $("accedit-name").value === ACC_TYPES[was].label || $("accedit-name").value === "Contanti") {
+    $("accedit-name").value = accEdit.type === "contanti" ? "Contanti" : "";
+  }
+  renderAccTypes();
+});
+$("accedit-cancel").addEventListener("click", () => closeTopSheet("accedit-sheet"));
+$("accedit-backdrop").addEventListener("click", () => closeTopSheet("accedit-sheet"));
+async function afterAccChange() {
+  await refreshAccBalances().catch(() => {});
+  if ($("acc-sheet").classList.contains("open")) renderAccSheet();
+  if (state.page === "dashboard") loadBalance();
+  if (state.page === "mesi") renderList();
+}
+$("accedit-sheet").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const e = accEdit, msg = $("accedit-msg");
+  const name = $("accedit-name").value.trim();
+  const cents = parseSigned($("accedit-amount").value || "0");
+  const date = $("accedit-date").value;
+  if (!name) return setMsg(msg, "Dai un nome al conto.", true);
+  if (cents === null) return setMsg(msg, "Inserisci un importo valido, es. 120 oppure 0.", true);
+  if (!date) return setMsg(msg, "Scegli una data.", true);
+  if (e.main) {
+    state.settingsData.main_name = name === "Conto corrente" ? undefined : name;
+    state.settingsData.opening = { cents, date };
+    await saveSettingsData("Salvato solo su questo dispositivo");
+  } else {
+    if (state.accounts.some((a) => a.id !== e.a?.id && a.name.toLowerCase() === name.toLowerCase())) return setMsg(msg, "C'è già un conto con questo nome.", true);
+    const row = { name, opening_cents: cents, opening_date: date };
+    const res = e.a
+      ? await sb.from("accounts").update(row).eq("id", e.a.id)
+      : await sb.from("accounts").insert({ ...row, type: e.type, sort_order: (state.accounts?.length || 0) + 1 });
+    if (res.error) return setMsg(msg, /accounts/.test(res.error.message) ? "Prima esegui lo script della 0.8.0 in Supabase." : "Errore: " + traduciErrore(res.error.message), true);
+  }
+  closeTopSheet("accedit-sheet");
+  toast(e.a || e.main ? `${name} aggiornato` : `${name}: conto aggiunto`);
+  afterAccChange();
+});
+$("accedit-archive").addEventListener("click", async () => {
+  const a = accEdit?.a;
+  if (!a) return;
+  const { error } = await sb.from("accounts").update({ archived: !a.archived }).eq("id", a.id);
+  if (error) return setMsg($("accedit-msg"), "Errore: " + traduciErrore(error.message), true);
+  closeTopSheet("accedit-sheet");
+  toast(a.archived ? `${a.name} riattivato` : `${a.name} archiviato: non compare più nelle scelte`);
+  afterAccChange();
+});
+$("accedit-del").addEventListener("click", async () => {
+  const a = accEdit?.a;
+  if (!a) return;
+  const [t, x] = await Promise.all([
+    sb.from("transactions").select("id").eq("account_id", a.id).limit(1),
+    sb.from("transfers").select("id").or(`from_account.eq.${a.id},to_account.eq.${a.id}`).limit(1),
+  ]);
+  if (t.data?.length || x.data?.length) {
+    return setMsg($("accedit-msg"), "Ha dei movimenti o dei trasferimenti: archivialo, così lo storico resta.", true);
+  }
+  actionSheet({
+    title: `Eliminare ${a.name}?`, message: "Non ha movimenti né trasferimenti.",
+    actions: [{ label: "Elimina conto", danger: true, onClick: async () => {
+      const { error } = await sb.from("accounts").delete().eq("id", a.id);
+      if (error) return toast("Errore: " + traduciErrore(error.message));
+      closeTopSheet("accedit-sheet");
+      toast(`${a.name} eliminato`);
+      afterAccChange();
+    } }],
+  });
+});
+
+// ---------- trasferimenti ----------
+let xferEdit = null;
+function accOptions(sel, value, extra = []) {
+  const list = [mainAcc(), ...activeAccounts()];
+  for (const id of extra) if (id && !list.some((a) => a.id === id)) { const a = accById(id); if (a) list.push(a); }
+  sel.replaceChildren(...list.map((a) => new Option(a.name, a.id || "")));
+  sel.value = value || "";
+}
+function openXfer(x = null) {
+  if (!x && !multiAcc()) return toast("Prima aggiungi un altro conto, per esempio i Contanti");
+  xferEdit = x;
+  const cash = activeAccounts().find((a) => a.type === "contanti");
+  accOptions($("xfer-from"), x ? x.from_account : null, [x?.from_account, x?.to_account]);
+  accOptions($("xfer-to"), x ? x.to_account : (cash || activeAccounts()[0])?.id, [x?.from_account, x?.to_account]);
+  $("xfer-amount").value = x ? fmtPlain(x.amount_cents) : "";
+  $("xfer-date").value = x?.date || isoDate(new Date());
+  $("xfer-desc").value = x?.description || "";
+  $("xfer-title").textContent = x ? "Trasferimento" : "Sposta soldi";
+  $("xfer-foot").hidden = !x;
+  setMsg($("xfer-msg"), x?.import_key ? "Arriva dall'estratto conto: se lo elimini, alla prossima importazione torna tra i Nuovi." : "");
+  openTopSheet("xfer-sheet");
+}
+$("xfer-cancel").addEventListener("click", () => closeTopSheet("xfer-sheet"));
+$("xfer-backdrop").addEventListener("click", () => closeTopSheet("xfer-sheet"));
+async function afterXferChange() {
+  if (state.page === "mesi") loadMonth();
+  await afterAccChange();
+}
+$("xfer-sheet").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const msg = $("xfer-msg");
+  const cents = parseAmount($("xfer-amount").value);
+  const from = $("xfer-from").value || null, to = $("xfer-to").value || null, date = $("xfer-date").value;
+  if (cents === null) return setMsg(msg, "Inserisci l'importo, es. 50.", true);
+  if (from === to) return setMsg(msg, "Scegli due conti diversi.", true);
+  if (!date) return setMsg(msg, "Scegli la data.", true);
+  const row = { amount_cents: cents, from_account: from, to_account: to, date, description: $("xfer-desc").value.trim() || null };
+  const res = xferEdit
+    ? await sb.from("transfers").update(row).eq("id", xferEdit.id)
+    : await sb.from("transfers").insert(row);
+  if (res.error) return setMsg(msg, /transfers/.test(res.error.message) ? "Prima esegui lo script della 0.8.0 in Supabase." : "Errore: " + traduciErrore(res.error.message), true);
+  closeTopSheet("xfer-sheet");
+  toast(`${fmt(cents)} da ${accName(from)} a ${accName(to)}`);
+  afterXferChange();
+});
+$("xfer-del").addEventListener("click", () => {
+  const x = xferEdit;
+  if (!x) return;
+  actionSheet({
+    title: "Eliminare il trasferimento?", message: `${fmt(x.amount_cents)} da ${accName(x.from_account)} a ${accName(x.to_account)}`,
+    actions: [{ label: "Elimina trasferimento", danger: true, onClick: async () => {
+      const { error } = await sb.from("transfers").delete().eq("id", x.id);
+      if (error) return toast("Errore: " + traduciErrore(error.message));
+      closeTopSheet("xfer-sheet");
+      toast("Trasferimento eliminato");
+      afterXferChange();
+    } }],
+  });
+});
+
+// riga di un trasferimento nella pagina Mesi (non conta nei totali)
+function xferRow(x) {
+  const li = el("li", "swipe xfer-row"); // stessa impaginazione dei movimenti, senza scorrimento
+  const content = el("div", "row-content");
+  const ic = el("span", "cat-ico xfer-ico");
+  ic.innerHTML = '<svg viewBox="0 0 24 24" class="ci"><path d="M4 8h14l-3-3M20 16H6l3 3"/></svg>';
+  const grow = el("div", "grow");
+  grow.append(el("div", "title", x.description || "Trasferimento"), el("div", "sub", `${accName(x.from_account)} → ${accName(x.to_account)}`));
+  content.append(ic, grow, el("span", "amt xfer", fmt(x.amount_cents)));
+  li.append(content);
+  li.addEventListener("click", () => openXfer(x));
+  return li;
+}
+
+// ---------- pannello +: il conto del movimento ----------
+const ACC_MEM = "flunora.accByCat";
+const accMem = () => { try { return JSON.parse(localStorage.getItem(ACC_MEM) || "{}"); } catch { return {}; } };
+function syncAccRow() {
+  const tx = state.editing;
+  const show = (multiAcc() || !!tx?.account_id) && state.kind !== "anticipo" && !state.editingRec && !$("f-repeat").value;
+  $("acc-row").hidden = !show;
+  if (!show) return;
+  const sel = $("f-account");
+  const want = state.accPicked !== undefined ? state.accPicked
+    : tx ? tx.account_id || null
+    : accMem()[state.categoryId] ?? null;
+  accOptions(sel, want, [tx?.account_id]);
+  if (sel.value !== (want || "")) sel.value = "";
+}
+$("f-account").addEventListener("change", () => { state.accPicked = $("f-account").value || null; });
+$("f-repeat").addEventListener("change", syncAccRow);
+// conto da salvare con il movimento (non tocca nulla se la riga non c'è)
+function accFields(row) {
+  if ($("acc-row").hidden) return row;
+  const id = $("f-account").value || null;
+  if (id || state.editing?.account_id) row.account_id = id;
+  if (!state.editing && row.category_id) {
+    const m = accMem();
+    if (id) m[row.category_id] = id; else delete m[row.category_id];
+    try { localStorage.setItem(ACC_MEM, JSON.stringify(m)); } catch {}
+  }
+  return row;
+}
 
 // =========================================================
 // 0.7.0 — AUTO

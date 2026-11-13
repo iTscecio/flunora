@@ -182,7 +182,7 @@
       kind: r.cents < 0 ? "uscita" : "entrata",
       amount: Math.abs(r.cents),
       date: r.date, title: titleCase(t), description: titleCase(t), via: "",
-      merchantKey: null, special: null, ignore: false, reason: "", keyword: null,
+      merchantKey: null, special: null, ignore: false, reason: "", keyword: null, move: null,
     };
 
     // pagamenti con carta
@@ -219,9 +219,9 @@
       out.description = out.title;
       return out;
     }
-    // prelievi di contanti: non sono spese (si gestiranno con i conti, 0.7.0)
+    // prelievi di contanti: non sono spese; con il conto Contanti (0.8.0) diventano trasferimenti
     if (/PRELIEV|PRELEV/.test(t)) {
-      out.ignore = true; out.reason = "Prelievo di contanti · non contato";
+      out.ignore = true; out.reason = "Prelievo di contanti · non contato"; out.move = "cash";
       out.title = "Prelievo di contanti";
       return out;
     }
@@ -231,7 +231,7 @@
       const who = benef ? benef[1] : "";
       const iban = benef ? benef[2] : "";
       if (/GIRO/.test(t) || (who && sameName(owner, who))) {
-        out.ignore = true;
+        out.ignore = true; out.move = "own"; // 0.8.0: trasferimento verso un tuo conto
         out.title = `Spostamento ${out.kind === "uscita" ? "verso" : "da"} il conto ${maskIban(iban)}`.trim();
         out.reason = "Tra i tuoi conti · non contato";
         return out;
@@ -247,7 +247,7 @@
     if (oc) {
       const who = cutCompany(oc[1]);
       if (sameName(owner, who)) {
-        out.ignore = true; out.reason = "Tra i tuoi conti · non contato";
+        out.ignore = true; out.reason = "Tra i tuoi conti · non contato"; out.move = "own";
         out.title = "Spostamento da un tuo conto";
         return out;
       }
