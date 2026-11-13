@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611131330">
+  <link rel="stylesheet" href="css/style.css?v=202611131431">
 </head>
 <body>
 
@@ -105,6 +105,13 @@
         <div class="card kpi"><span class="secondary">Investito <span class="y"></span></span><strong id="d-invest">–</strong></div>
         <div class="card kpi accent"><span class="secondary">Saldo <span class="y"></span></span><strong id="d-saldo">–</strong></div>
       </div>
+
+      <!-- 0.6.1: riepilogo dell'anno -->
+      <button type="button" class="card yr-open" id="yr-open">
+        <span class="ph-ico" style="--c:#5856d6"><svg viewBox="0 0 24 24" class="stroke"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></span>
+        <span class="yr-open-t"><strong>Il tuo <span class="y"></span> in breve</strong><span class="secondary small">Totali, mesi, categorie, abbonamenti e desideri · anche in PDF</span></span>
+        <span class="chev">&rsaquo;</span>
+      </button>
 
       <div class="card">
         <div class="card-head">
@@ -303,6 +310,12 @@
             <span class="label">Mostra le scorciatoie nascoste</span><span id="freq-reset-n" class="value"></span></li>
         </ul>
 
+        <h3 class="section-title">Notifiche</h3>
+        <ul class="card list settings">
+          <li class="tap" id="open-notify"><span class="ico" style="--c:#ff3b30"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></svg></span>
+            <span class="label">Notifiche</span><span id="set-notify" class="value"></span><span class="chev">&rsaquo;</span></li>
+        </ul>
+
         <h3 class="section-title">Sicurezza</h3>
         <ul class="card list settings">
           <li><span class="ico" style="--c:#34c759"><svg viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9v1.5M15 9v1.5M12 9v4h-1M9.5 16c1.4 1 3.6 1 5 0"/></svg></span>
@@ -415,6 +428,49 @@
         <button type="button" id="sheet-delete" class="btn-danger">Elimina</button>
       </div>
     </form>
+
+    <!-- ---------- 0.6.1: NOTIFICHE (pagina dentro le Impostazioni) ---------- -->
+    <div id="notify" class="settings-panel sub-panel" aria-hidden="true">
+      <header class="glass settings-head">
+        <button type="button" id="notify-back" class="link-btn back-btn">&lsaquo; Impostazioni</button>
+        <h2>Notifiche</h2>
+        <span></span>
+      </header>
+      <div class="settings-body">
+        <section class="card nt-status" id="nt-status">
+          <span class="nt-ico"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></svg></span>
+          <div class="nt-text"><strong id="nt-title"></strong><span class="secondary small" id="nt-sub"></span></div>
+          <button type="button" id="nt-enable" class="lock-btn nt-btn"></button>
+        </section>
+
+        <h3 class="section-title">Cosa ricevere</h3>
+        <ul class="card list settings" id="nt-types"></ul>
+
+        <h3 class="section-title">Quando</h3>
+        <div class="group">
+          <label class="group-row"><span>Ora</span><select id="nt-hour"></select></label>
+        </div>
+        <p class="secondary small foot">Una notifica al giorno al massimo per ogni tipo, all'ora che scegli. Il riepilogo dell'anno arriva il 2 gennaio.</p>
+
+        <h3 class="section-title" id="nt-next-title">In programma</h3>
+        <ul class="card list nt-next" id="nt-next"></ul>
+
+        <ul class="card list settings">
+          <li class="tap" id="nt-test"><span class="label accent-text">Manda una notifica di prova</span></li>
+        </ul>
+        <p class="secondary small foot">Le notifiche arrivano anche ad app chiusa, su questo iPhone. Servono iOS 16.4 o successivo e Flunora aperta dall'icona sulla schermata Home. Ogni giorno, alla stessa ora, Supabase aggiunge anche i movimenti periodici arrivati a scadenza.</p>
+      </div>
+    </div>
+
+    <!-- ---------- 0.6.1: RIEPILOGO DELL'ANNO ---------- -->
+    <div id="yr" class="settings-panel sub-panel yr-panel" aria-hidden="true">
+      <header class="glass settings-head">
+        <button type="button" id="yr-back" class="link-btn back-btn">&lsaquo; Dashboard</button>
+        <h2 id="yr-head">Riepilogo</h2>
+        <button type="button" id="yr-pdf" class="link-btn strong">PDF</button>
+      </header>
+      <div class="settings-body" id="yr-body"></div>
+    </div>
 
     <!-- ---------- CATEGORIE (0.2.0): pagina dentro le Impostazioni ---------- -->
     <div id="categories" class="settings-panel sub-panel" aria-hidden="true">
@@ -759,11 +815,11 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611131330"></script>
-  <script src="js/releases.js?v=202611131330"></script>
-  <script src="js/icons.js?v=202611131330"></script>
-  <script src="js/app.js?v=202611131330"></script>
-  <script src="js/bank-bdp.js?v=202611131330"></script>
-  <script src="js/import.js?v=202611131330"></script>
+  <script src="js/config.js?v=202611131431"></script>
+  <script src="js/releases.js?v=202611131431"></script>
+  <script src="js/icons.js?v=202611131431"></script>
+  <script src="js/app.js?v=202611131431"></script>
+  <script src="js/bank-bdp.js?v=202611131431"></script>
+  <script src="js/import.js?v=202611131431"></script>
 </body>
 </html>

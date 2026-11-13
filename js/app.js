@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.6.0";
+const APP_VERSION = "0.6.1";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -2101,6 +2101,7 @@ function openSettings() {
   $("set-backup").textContent = lastBackupText();
   renderFreqReset();
   renderLock();
+  renderNotifyValue();
   $("settings").scrollTop = 0;
   $("settings").classList.add("open");
   $("settings").setAttribute("aria-hidden", "false");
@@ -4124,6 +4125,321 @@ $("wauto-stop").addEventListener("click", async () => {
   if (state.page === "desideri") loadWishes();
   if (state.page === "abbonamenti") renderPeriodic();
 });
+
+// =========================================================
+// 0.6.1 — NOTIFICHE SU IPHONE
+// Web Push: il service worker (sw.js) mostra le notifiche; l'iscrizione di questo
+// dispositivo sta nella tabella push_subscriptions. Ogni giorno, all'ora scelta,
+// una funzione su Supabase aggiunge i periodici arrivati a scadenza e manda i
+// promemoria accesi qui (impostazioni sincronizzate: settingsData.notify).
+// =========================================================
+const NT_TYPES = [
+  { id: "periodici", name: "Periodici in arrivo", sub: "Il giorno prima: abbonamenti, pagamenti, entrate, risparmio", color: "#ff2d55" },
+  { id: "mese", name: "Inizio mese", sub: "Il 1°: recap del mese passato e avanzo del budget", color: "#34c759" },
+  { id: "anticipi", name: "Anticipi in ritardo", sub: "Quote non restituite dopo 30 giorni", color: "#007aff" },
+  { id: "backup", name: "Promemoria backup", sub: "Quando è ora del backup, come in Impostazioni › Backup", color: "#30b0c7" },
+  { id: "anno", name: "Riepilogo dell'anno", sub: "Il 2 gennaio, con l'anno appena chiuso", color: "#5856d6" },
+];
+const ntCfg = () => {
+  const n = state.settingsData?.notify || {};
+  return { hour: 9, ...n, types: { ...Object.fromEntries(NT_TYPES.map((t) => [t.id, true])), ...(n.types || {}) } };
+};
+const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const isStandalone = () => navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
+const hourLabel = (h) => `${h}:00`;
+const b64urlBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(s.length / 4) * 4, "=")), (c) => c.charCodeAt(0));
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+
+// "on" · "off" · "denied" · "home" (va aperta dalla schermata Home) · "unsupported"
+async function ntState() {
+  if (window.__NT_STATE) return window.__NT_STATE; // solo per le prove
+  if (!pushSupported()) return /iPhone|iPad/.test(navigator.userAgent) && !isStandalone() ? "home" : "unsupported";
+  if (Notification.permission === "denied") return "denied";
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = await reg?.pushManager.getSubscription();
+    return sub && Notification.permission === "granted" ? "on" : "off";
+  } catch { return "off"; }
+}
+
+async function renderNotifyValue() {
+  const st = await ntState();
+  $("set-notify").textContent = st === "on" ? "Attive" : st === "denied" ? "Bloccate" : "Spente";
+}
+
+const NT_TEXT = {
+  on: ["Notifiche attive su questo iPhone", (c) => `Arrivano anche ad app chiusa, ogni giorno alle ${hourLabel(c.hour)}.`, "Disattiva"],
+  off: ["Notifiche spente", () => "Attivale per ricevere i promemoria anche quando Flunora è chiusa.", "Attiva le notifiche"],
+  denied: ["Notifiche bloccate", () => "Le hai rifiutate: le riattivi in Impostazioni di iPhone › Notifiche › Flunora.", ""],
+  home: ["Apri Flunora dalla schermata Home", () => "Su iPhone le notifiche funzionano solo dall'app aggiunta alla schermata Home: in Safari tocca Condividi › Aggiungi alla schermata Home.", ""],
+  unsupported: ["Notifiche non disponibili qui", () => "Questo dispositivo o browser non supporta le notifiche di Flunora (su iPhone serve iOS 16.4 o successivo).", ""],
+};
+
+async function openNotify() {
+  $("notify").scrollTop = 0;
+  $("notify").classList.add("open");
+  $("notify").setAttribute("aria-hidden", "false");
+  await renderNotify();
+}
+function closeNotify() {
+  $("notify").classList.remove("open");
+  $("notify").setAttribute("aria-hidden", "true");
+  renderNotifyValue();
+}
+$("open-notify").addEventListener("click", openNotify);
+$("notify-back").addEventListener("click", closeNotify);
+
+async function renderNotify() {
+  const st = await ntState(), c = ntCfg();
+  const [title, sub, btn] = NT_TEXT[st];
+  $("nt-status").className = "card nt-status " + st;
+  $("nt-title").textContent = title;
+  $("nt-sub").textContent = sub(c);
+  $("nt-enable").hidden = !btn;
+  $("nt-enable").textContent = btn;
+  $("nt-enable").classList.toggle("ghost", st === "on");
+  // tipi
+  $("nt-types").replaceChildren(...NT_TYPES.map((t) => {
+    const li = el("li");
+    const ico = el("span", "ico"); ico.style.setProperty("--c", t.color);
+    ico.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></svg>';
+    const label = el("span", "label");
+    label.append(el("span", null, t.name), el("small", null, t.sub));
+    const sw = el("label", "switch");
+    const input = document.createElement("input");
+    input.type = "checkbox"; input.checked = !!c.types[t.id];
+    input.setAttribute("aria-label", t.name);
+    input.addEventListener("change", () => {
+      const n = ntCfg(); n.types[t.id] = input.checked;
+      state.settingsData.notify = n; saveSettingsData("Notifiche salvate solo su questo dispositivo");
+      renderNotifyNext();
+    });
+    sw.append(input, el("span"));
+    li.append(ico, label, sw);
+    return li;
+  }));
+  // ora
+  const sel = $("nt-hour");
+  if (!sel.options.length) for (let h = 6; h <= 23; h++) sel.append(new Option(hourLabel(h), String(h)));
+  sel.value = String(c.hour);
+  $("nt-test").hidden = st !== "on";
+  renderNotifyNext();
+}
+$("nt-hour").addEventListener("change", () => {
+  state.settingsData.notify = { ...ntCfg(), hour: Number($("nt-hour").value) };
+  saveSettingsData("Notifiche salvate solo su questo dispositivo");
+  renderNotify();
+});
+
+// le prossime notifiche, come arriveranno (testi uguali a quelli della funzione su Supabase)
+async function upcomingNotifs() {
+  const c = ntCfg(), out = [];
+  const now = new Date(), today = isoDate(now);
+  const at = (d) => { const x = new Date(d + "T00:00"); x.setHours(c.hour); return x; };
+  if (c.types.periodici) {
+    const recs = (await loadRecurring()).filter((r) => r.active);
+    for (let k = 0; k <= 7; k++) {
+      const day = isoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + k));
+      const due = isoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + k + 1));
+      const list = recs.filter((r) => recNext(r, r.last_date && r.last_date > today ? r.last_date : today) === due);
+      if (!list.length) continue;
+      const names = list.map((r) => `${r.kind === "risparmio" ? (r.wish_id ? r.description : POOL_NAME) : r.description} ${fmt(r.amount_cents)}`);
+      out.push({ when: at(day), title: list.length === 1 ? "Domani" : `Domani, ${list.length} periodici`, body: names.join(" · ") });
+    }
+  }
+  if (c.types.mese) {
+    const first = isoDate(addMonths(firstOfMonth(now), 1));
+    out.push({ when: at(first), title: `${MESI[now.getMonth()][0].toUpperCase()}${MESI[now.getMonth()].slice(1)} in breve`, body: "Entrate, uscite, quanto è rimasto e l'eventuale avanzo del budget da mettere nei Desideri" });
+  }
+  if (c.types.anno) {
+    const jan = `${now.getFullYear() + 1}-01-02`;
+    out.push({ when: at(jan), title: `Il tuo ${now.getFullYear()} in breve`, body: "Il riepilogo dell'anno è pronto: totali, mesi, categorie, abbonamenti e desideri" });
+  }
+  return out.filter((n) => n.when > now).sort((a, b) => a.when - b.when).slice(0, 5);
+}
+async function renderNotifyNext() {
+  const list = (await ntState()) === "on" ? await upcomingNotifs() : [];
+  $("nt-next-title").hidden = !list.length;
+  $("nt-next").hidden = !list.length;
+  const tomorrow = isoDate(new Date(Date.now() + 864e5));
+  $("nt-next").replaceChildren(...list.map((n) => {
+    const li = el("li", "nt-item");
+    const d = isoDate(n.when);
+    const sd = d === tomorrow ? "Domani" : d === isoDate(new Date()) ? "Oggi" : shortDay(d);
+    const head = el("div", "nt-item-head");
+    const app = el("span", "nt-app");
+    const img = document.createElement("img"); img.src = "icons/icon-192.png"; img.alt = "";
+    app.append(img, "FLUNORA");
+    head.append(app, el("span", "nt-when", `${sd[0].toUpperCase()}${sd.slice(1)}, ${hourLabel(n.when.getHours())}`));
+    li.append(head, el("strong", null, n.title), el("span", "nt-body", n.body));
+    return li;
+  }));
+}
+
+$("nt-enable").addEventListener("click", async () => {
+  const st = await ntState();
+  if (st === "on") return disablePush();
+  enablePush();
+});
+async function enablePush() {
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") return renderNotify();
+    const { data: key, error } = await sb.rpc("push_public_key");
+    if (error || !key) return toast("Prima completa la guida della 0.6.1 in Supabase");
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlBytes(key) });
+    const j = sub.toJSON();
+    const { error: e2 } = await sb.from("push_subscriptions").upsert(
+      { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, device: navigator.userAgent.slice(0, 160) },
+      { onConflict: "endpoint" });
+    if (e2) return toast("Notifiche non salvate: " + traduciErrore(e2.message));
+    state.settingsData.notify = ntCfg();
+    saveSettingsData("Notifiche salvate solo su questo dispositivo");
+    toast("Notifiche attive");
+  } catch (err) {
+    toast("Notifiche non attivate: " + (err?.message || err));
+  }
+  renderNotify();
+}
+async function disablePush() {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = await reg?.pushManager.getSubscription();
+    if (sub) { await sb.from("push_subscriptions").delete().eq("endpoint", sub.endpoint); await sub.unsubscribe(); }
+    toast("Notifiche disattivate su questo iPhone");
+  } catch (err) { toast("Errore: " + (err?.message || err)); }
+  renderNotify();
+}
+$("nt-test").addEventListener("click", async () => {
+  // prova completa: la funzione su Supabase manda una notifica a questo dispositivo
+  const { error } = await sb.functions?.invoke?.("notifiche", { body: { test: true } }) || { error: { message: "funzione non disponibile" } };
+  if (!error) return toast("Notifica di prova inviata: arriva tra qualche secondo");
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification("Flunora", { body: "Notifica di prova: le notifiche funzionano su questo iPhone", icon: "icons/icon-192.png" });
+    toast("Notifica di prova mostrata (la funzione su Supabase non risponde ancora)");
+  } catch { toast("Prova non riuscita: " + traduciErrore(error.message)); }
+});
+
+// =========================================================
+// IMPR-006 (0.6.1) — RIEPILOGO DELL'ANNO
+// =========================================================
+$("yr-open").addEventListener("click", () => openYearRecap(state.year));
+$("yr-back").addEventListener("click", () => { $("yr").classList.remove("open"); $("yr").setAttribute("aria-hidden", "true"); });
+$("yr-pdf").addEventListener("click", () => {
+  document.body.classList.add("print-yr");
+  setTimeout(() => window.print(), 50);
+});
+window.addEventListener("afterprint", () => document.body.classList.remove("print-yr"));
+
+async function openYearRecap(y) {
+  $("yr-head").textContent = `Il tuo ${y}`;
+  $("yr-body").replaceChildren(el("p", "secondary center", "Calcolo il riepilogo…"));
+  $("yr").scrollTop = 0;
+  $("yr").classList.add("open");
+  $("yr").setAttribute("aria-hidden", "false");
+  const from = `${y}-01-01`, to = `${y + 1}-01-01`;
+  const [tRes, recs, wRes, aRes] = await Promise.all([
+    sb.from("transactions").select("date, amount_cents, kind, category_id, recurring_id").gte("date", from).lt("date", to),
+    loadRecurring(),
+    sb.from("wishes").select("*"),
+    sb.from("advances").select("*").gte("date", from).lt("date", to),
+  ]);
+  if (tRes.error) { $("yr-body").replaceChildren(el("p", "secondary", "Riepilogo non disponibile: " + traduciErrore(tRes.error.message))); return; }
+  const tx = tRes.data;
+  const sum = (rows, k) => rows.filter((t) => t.kind === k).reduce((a, t) => a + t.amount_cents, 0);
+  const ent = sum(tx, "entrata"), usc = sum(tx, "uscita"), inv = sum(tx, "investimento"), rim = ent - usc - inv;
+  const body = $("yr-body");
+  body.replaceChildren();
+  const now = new Date();
+  const fino = y === now.getFullYear() ? `dal 1° gennaio a oggi, ${now.getDate()} ${MESI[now.getMonth()]}` : `dal 1° gennaio al 31 dicembre ${y}`;
+  const hero = el("section", "card yr-hero");
+  hero.append(el("span", "secondary small", fino), el("span", "lbl", "Ti sono rimasti"), el("span", "big" + (rim < 0 ? " neg" : ""), (rim < 0 ? "− " : "") + fmt(Math.abs(rim))));
+  const g = el("div", "yr-kpis");
+  for (const [l, c, k] of [["Entrate", ent, "in"], ["Uscite", usc, ""], ["Investito", inv, ""]]) {
+    const d = el("div", "yr-kpi " + k); d.append(el("span", "secondary small", l), el("strong", null, fmt(c))); g.append(d);
+  }
+  hero.append(g);
+  body.append(hero);
+
+  // mesi
+  const months = Array.from({ length: 12 }, (_, m) => {
+    const rows = tx.filter((t) => Number(t.date.slice(5, 7)) === m + 1);
+    return { m, n: rows.length, usc: sum(rows, "uscita"), rim: sum(rows, "entrata") - sum(rows, "uscita") - sum(rows, "investimento") };
+  }).filter((x) => x.n);
+  if (months.length) {
+    const best = [...months].sort((a, b) => b.rim - a.rim)[0], dear = [...months].sort((a, b) => b.usc - a.usc)[0];
+    const cap = (m) => MESI[m][0].toUpperCase() + MESI[m].slice(1);
+    const sec = el("section", "card yr-sec");
+    sec.append(el("h3", null, "I mesi"));
+    const row = (t, v, s) => { const d = el("div", "yr-row"); d.append(el("span", null, t), el("strong", null, v)); if (s) d.append(el("small", "secondary", s)); return d; };
+    sec.append(row("Mese migliore", cap(best.m), `ti sono rimasti ${fmt(best.rim)}`), row("Mese più caro", cap(dear.m), `uscite ${fmt(dear.usc)}`),
+      row("Uscite medie al mese", fmt(Math.round(usc / months.length)), `su ${months.length} ${months.length === 1 ? "mese" : "mesi"} con movimenti`));
+    body.append(sec);
+  }
+
+  // categorie
+  const byCat = new Map();
+  tx.filter((t) => t.kind === "uscita").forEach((t) => byCat.set(t.category_id, (byCat.get(t.category_id) || 0) + t.amount_cents));
+  const top = [...byCat].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  if (top.length) {
+    const sec = el("section", "card yr-sec");
+    sec.append(el("h3", null, "Dove sono andati i soldi"));
+    for (const [id, c] of top) {
+      const cat = catById(id);
+      const d = el("div", "yr-cat");
+      const head = el("div", "yr-cat-head");
+      head.append(catIcon(cat, "sm"), el("span", null, cat?.name || "Altro"), el("strong", null, fmt(c)), el("small", "secondary", c / usc < 0.005 ? "<1%" : `${Math.round((c / usc) * 100)}%`));
+      const bar = el("div", "yr-bar"); const i = el("i"); i.style.width = `${(c / top[0][1]) * 100}%`; i.style.background = cat?.color || "#8e8e93"; bar.append(i);
+      d.append(head, bar);
+      sec.append(d);
+    }
+    body.append(sec);
+  }
+
+  // abbonamenti
+  const subs = recs.filter((r) => r.kind === "uscita" && r.is_subscription);
+  const subIds = new Set(subs.map((r) => r.id));
+  const paidSubs = tx.filter((t) => t.recurring_id && subIds.has(t.recurring_id)).reduce((a, t) => a + t.amount_cents, 0);
+  if (subs.length) {
+    const active = subs.filter((r) => r.active);
+    const yearly = active.reduce((a, r) => a + (r.frequency === "anno" ? r.amount_cents : r.amount_cents * 12), 0);
+    const sec = el("section", "card yr-sec");
+    sec.append(el("h3", null, "Abbonamenti"));
+    const p = el("p", null);
+    if (paidSubs) p.append(`Quest'anno hai speso `, el("strong", null, fmt(paidSubs)), " in abbonamenti. ");
+    p.append(`Ne hai ${active.length} ${active.length === 1 ? "attivo, che costa" : "attivi, che costano"} `, el("strong", null, fmt(yearly)), " all'anno.");
+    sec.append(p);
+    body.append(sec);
+  }
+
+  // desideri e anticipi
+  const wishes = wRes.error ? [] : wRes.data;
+  const bought = wishes.filter((w) => w.status === "comprato" && (w.closed_on || "").startsWith(String(y)));
+  const savedNow = wishes.filter((w) => w.status === "attivo").reduce((a, w) => a + w.saved_cents, 0) + wishPool();
+  if (bought.length || savedNow) {
+    const sec = el("section", "card yr-sec");
+    sec.append(el("h3", null, "Desideri"));
+    const p = el("p", null);
+    if (bought.length) p.append(`Ne hai realizzati ${bought.length}: `, el("strong", null, bought.map((w) => w.name).join(", ")), ". ");
+    if (savedNow) p.append("Messi da parte adesso: ", el("strong", null, fmt(savedNow)), ".");
+    sec.append(p);
+    body.append(sec);
+  }
+  const adv = aRes.error ? [] : aRes.data;
+  if (adv.length) {
+    const others = adv.reduce((a, x) => a + x.total_cents - x.own_cents, 0);
+    const sec = el("section", "card yr-sec");
+    sec.append(el("h3", null, "Anticipi"));
+    const p = el("p", null);
+    p.append(`Hai anticipato `, el("strong", null, fmt(others)), ` per altri in ${adv.length} ${adv.length === 1 ? "occasione" : "occasioni"}.`);
+    sec.append(p);
+    body.append(sec);
+  }
+  body.append(el("p", "secondary small center yr-foot", `Flunora · riepilogo del ${y} · creato il ${now.toLocaleDateString("it-IT")}`));
+}
 
 // =========================================================
 // IMPR-004 (0.5.1) — BLOCCO CON FACE ID

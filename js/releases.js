@@ -5,6 +5,15 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.6.1", date: "novembre 2026",
+    items: [
+      "Nuovo: le notifiche su iPhone, anche ad app chiusa. Le attivi in Impostazioni › Notifiche (serve Flunora aperta dall'icona sulla schermata Home)",
+      "Scegli cosa ricevere: periodici in arrivo il giorno prima, recap e avanzo a inizio mese, anticipi in ritardo, promemoria del backup e riepilogo dell'anno; e a che ora",
+      "Gli abbonamenti e i pagamenti periodici ora arrivano ogni giorno anche se non apri Flunora",
+      "Nuovo nella Dashboard: \"Il tuo anno in breve\", con totali, mese migliore e più caro, categorie, abbonamenti, desideri e anticipi; si salva in PDF (IMPR-006)",
+    ],
+  },
+  {
     version: "0.6.0", date: "13 novembre 2026",
     items: [
       "Nuovo: la sezione Abbonamenti (si attiva in Impostazioni › Sezioni). Dentro trovi abbonamenti, pagamenti ed entrate periodiche e il risparmio periodico dei Desideri, con quanto pesano al mese e la prossima data",
