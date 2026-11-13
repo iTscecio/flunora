@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.5.1";
+const APP_VERSION = "0.6.0";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -176,6 +176,7 @@ async function startApp() {
   await Promise.all([loadCategories(), loadSettings()]);
   renderTabbar();
   route();
+  runRecurring(); // 0.6.0: aggiunge i movimenti periodici arrivati a scadenza
   maybeShowWhatsNew();
   maybeAutoCopy();
 }
@@ -224,6 +225,7 @@ function route() {
   if (p === "mesi") loadMonth();
   if (p === "anticipi") loadAdvances();
   if (p === "desideri") loadWishes();
+  if (p === "abbonamenti") renderPeriodic();
 }
 window.addEventListener("hashchange", route);
 
@@ -242,6 +244,8 @@ async function loadDashboard() {
   loadBalance();   // saldo totale (0.2.4), indipendente dall'anno mostrato
   renderBackupBanner();   // promemoria backup (0.3.0)
   renderLeftoverBanner(); // avanzo del mese (0.5.1)
+  renderRecap();          // recap del mese passato (0.6.0)
+  renderUpcoming();       // periodici in arrivo (0.6.0)
   const y = state.year;
   $("year-label").textContent = y;
   document.querySelectorAll("#page-dashboard .y").forEach((s) => (s.textContent = y));
@@ -723,7 +727,7 @@ function renderList() {
       const tipo = { entrata: "Entrata", uscita: "", investimento: "Investimento" }[tx.kind];
       grow.append(
         el("div", "title", tx.description || cat?.name || "Movimento"),
-        el("div", "sub", [tipo, cat?.name].filter(Boolean).join(" · "))
+        el("div", "sub", [tipo, cat?.name, tx.recurring_id ? "↻ periodico" : ""].filter(Boolean).join(" · "))
       );
       const amt = el("span", "amt" + (tx.kind === "entrata" ? " in" : ""),
         (tx.kind === "entrata" ? "+ " : "− ") + fmt(tx.amount_cents));
@@ -903,6 +907,7 @@ function setKind(kind) {
   renderChips();
   renderFreq();
   renderAdvFields();
+  syncRepRow();
 }
 
 // categorie selezionabili: quelle attive, più quella del movimento in modifica se archiviata
@@ -942,6 +947,15 @@ function openSheet(tx) {
   setMsg($("sheet-msg"), "");
   $("sheet-title").textContent = tx ? "Modifica movimento" : "Nuovo movimento";
   $("sheet-foot").hidden = !tx; // 0.5.1: Duplica ed Elimina solo in modifica
+  // 0.6.0: "Ripeti" solo per i movimenti nuovi; il pannello torna quello normale
+  state.editingRec = null;
+  $("sheet-dup").hidden = false;
+  $("sheet-pause").hidden = true;
+  $("sheet-delete").textContent = "Elimina";
+  $("f-repeat").value = "";
+  $("f-repeat").querySelector('option[value=""]').disabled = false;
+  $("f-sub").value = "1";
+  $("sheet").classList.remove("top"); $("sheet-backdrop").classList.remove("top");
   if (tx) {
     state.categoryId = tx.category_id;
     setKind(tx.kind);
@@ -970,12 +984,14 @@ function openSheet(tx) {
     else if (state.kind === "anticipo") setKind("uscita");
   }
   resetAdvFields();
+  syncRepRow();
   // 0.2.1: niente cursore automatico, la tastiera si apre solo toccando un campo
 }
 
 function closeSheet() {
   state.wishBuying = null;
   state.dupOf = null;
+  state.editingRec = null;
   $("sheet").classList.remove("open");
   $("sheet").setAttribute("aria-hidden", "true");
   $("sheet-backdrop").classList.remove("open");
@@ -1142,6 +1158,7 @@ async function loadWishes() {
     return;
   }
   state.wishes = data;
+  await loadSavingRecs(); // 0.6.0
   const open = data.filter((w) => w.status === "attivo");
   const closed = data.filter((w) => w.status !== "attivo");
   const saved = open.reduce((a, w) => a + w.saved_cents, 0);
@@ -1197,6 +1214,8 @@ function wishCard(w) {
   card.append(bar, info);
   const plan = wishPlan(w);
   if (plan && left) card.append(el("p", "small wish-plan", `Entro ${plan.label}: ${fmt(plan.monthly)} al mese`));
+  const auto = savingRecFor(w);
+  if (auto) card.append(el("p", "small wish-auto", `↻ ${fmt(auto.amount_cents)} ${recLabel(auto).toLowerCase()}`));
   if (w.note) card.append(el("p", "secondary small wish-note", w.note));
   const row = el("div", "wish-actions");
   const put = el("button", "adv-btn", "Metti da parte");
@@ -1230,6 +1249,7 @@ function wishMenu(w) {
   const actions = [];
   if (w.status === "attivo") {
     actions.push({ label: "Modifica", onClick: () => openWishSheet(w) });
+    actions.push({ label: savingRecFor(w) ? "Risparmio periodico ↻" : "Risparmio periodico", onClick: () => openWishAuto(w) });
     if (w.saved_cents) actions.push({ label: "Sposta soldi", onClick: () => openWishMove(w, "move") });
     if (w.saved_cents) actions.push({ label: "Riprendi soldi", onClick: () => openWishMove(w, "out") });
     actions.push({ label: "Rinuncio", danger: true, onClick: () => giveUpWish(w) });
@@ -1459,14 +1479,18 @@ function renderPool(open) {
     ? "Soldi per i Desideri non ancora assegnati a un desiderio"
     : "Metti da parte per i Desideri senza sceglierne uno: lo assegni dopo";
   $("pool-assign").hidden = !pool || !open.length;
+  const auto = savingRecFor(poolItem());
+  $("pool-auto").hidden = !auto;
+  if (auto) $("pool-auto").textContent = `↻ ${fmt(auto.amount_cents)} ${recLabel(auto).toLowerCase()}`;
 }
 $("pool-put").addEventListener("click", () => openWishMove(poolItem(), "in"));
 $("pool-assign").addEventListener("click", () => openWishMove(poolItem(), "move"));
 $("pool-head").addEventListener("click", () => {
   const p = poolItem();
-  if (!p.saved_cents) return;
+  if (!p.saved_cents) return openWishAuto(p);
   actionSheet({ title: POOL_NAME, message: `Dentro ci sono ${fmt(p.saved_cents)}.`, actions: [
     ...(moveTargets(p).length ? [{ label: "Assegna a un desiderio", onClick: () => openWishMove(p, "move") }] : []),
+    { label: "Risparmio periodico", onClick: () => openWishAuto(p) },
     { label: "Riprendi soldi", onClick: () => openWishMove(p, "out") },
   ] });
 });
@@ -1798,6 +1822,8 @@ function advDeleteMenu(x) {
 $("sheet").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (state.kind === "anticipo") return saveAdvance();
+  if (state.editingRec) return saveRecFromSheet(); // 0.6.0: modifica di un periodico
+  const repeat = !state.editing && !$("rep-row").hidden ? $("f-repeat").value : "";
   const msg = $("sheet-msg");
   const amount = parseAmount($("f-amount").value);
   if (amount === null) { setMsg(msg, "Inserisci un importo valido, es. 12,50.", true); $("f-amount").focus(); return; }
@@ -1811,6 +1837,7 @@ $("sheet").addEventListener("submit", async (e) => {
     date: $("f-date").value,
     description: $("f-desc").value.trim() || null,
   };
+  if (repeat) return saveNewRec(row, repeat); // 0.6.0: nuovo movimento periodico
   const save = $("sheet-save");
   save.disabled = true;
   const wasEdit = !!state.editing;
@@ -1854,6 +1881,7 @@ $("sheet-dup").addEventListener("click", () => {
 });
 
 $("sheet-delete").addEventListener("click", async () => {
+  if (state.editingRec) return deleteRec(state.editingRec); // 0.6.0
   const tx = state.editing;
   if (!tx) return;
   closeSheet();
@@ -1887,7 +1915,7 @@ const ICONS = {
 const SECTIONS = {
   dashboard:   { name: "Dashboard",   color: "#007aff" },
   mesi:        { name: "Mesi",        color: "#34c759" },
-  abbonamenti: { name: "Abbonamenti", color: "#ff2d55", placeholder: true },
+  abbonamenti: { name: "Abbonamenti", color: "#ff2d55" }, // 0.6.0: abbonamenti e periodici
   auto:        { name: "Auto",        color: "#ff9500", placeholder: true },
   anticipi:    { name: "Anticipi",    color: "#af52de" },
   desideri:    { name: "Desideri",    color: "#30b0c7" },
@@ -3123,7 +3151,8 @@ async function buildBackup() {
       categories: stripUser(categories),
       transactions: stripUser(transactions),
       budgets: budgets.map((b) => ({ month: b.month, amount_cents: b.amount_cents })),
-      recurring: stripUser(recurring),
+      // 0.6.0: il risparmio periodico ricorda il nome del desiderio, per ricollegarlo al ripristino
+      recurring: stripUser(recurring).map((r) => ({ ...r, wish_name: r.wish_id ? wishes.find((w) => w.id === r.wish_id)?.name || null : null })),
       import_rules: importRules.map((r) => ({ pattern: r.pattern, category_id: r.category_id })),
       // 0.4.5: anticipi con le loro quote (i collegamenti ai movimenti non servono al ripristino)
       advances: advances.map((a) => ({
@@ -3460,7 +3489,7 @@ async function runRestore() {
     // 2. ripristino in un'unica operazione sul database
     const d = r.obj.data;
     const { data: res, error } = await sb.rpc("restore_backup", {
-      payload: { categories: d.categories, transactions: d.transactions, budgets: d.budgets || [], import_rules: d.import_rules || [], advances: d.advances || [], wishes: d.wishes || [] },
+      payload: { categories: d.categories, transactions: d.transactions, budgets: d.budgets || [], import_rules: d.import_rules || [], advances: d.advances || [], wishes: d.wishes || [], recurring: d.recurring || [] },
       replace_all: r.mode === "replace",
     });
     if (error) {
@@ -3653,6 +3682,448 @@ document.querySelectorAll(".sheet").forEach(attachSheetDrag);
 // niente zoom con due dita (Safari) — resta lo Zoom di sistema in Accessibilità
 document.addEventListener("gesturestart", (e) => e.preventDefault(), { passive: false });
 document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
+
+// =========================================================
+// 0.6.0 — MOVIMENTI PERIODICI e RISPARMIO PERIODICO
+// Tabella recurring: modello (tipo, categoria, importo, descrizione), ogni mese o
+// ogni anno, giorno (e mese), data di partenza, ultima data già aggiunta.
+// I movimenti nascono quando apri l'app, ognuno con la sua data; recurring_id + mese
+// è unico, quindi niente doppioni. kind "risparmio" = soldi messi da parte in
+// automatico per un desiderio (wish_id) o per il Salvadanaio (wish_id vuoto).
+// =========================================================
+// gruppi della sezione Abbonamenti; ognuno ha la sua descrizione sulla riga
+const REC_GROUPS = [
+  { id: "abb", title: "Abbonamenti", tag: "", test: (r) => r.kind === "uscita" && r.is_subscription },
+  { id: "pag", title: "Pagamenti periodici", tag: "Pagamento periodico", test: (r) => (r.kind === "uscita" && !r.is_subscription) || r.kind === "investimento" },
+  { id: "ent", title: "Entrate periodiche", tag: "Entrata periodica", test: (r) => r.kind === "entrata" },
+  { id: "des", title: "Desideri", tag: "Risparmio periodico", test: (r) => r.kind === "risparmio" },
+];
+const daysIn = (y, m) => new Date(y, m + 1, 0).getDate(); // m da 0
+const recDate = (rec, y, m) => isoDate(new Date(y, m, Math.min(rec.day_of_month, daysIn(y, m))));
+const shortDay = (iso) => new Date(iso + "T12:00").toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" });
+
+// prossima data dopo `after` (esclusa); senza `after` la prima dalla partenza (inclusa)
+function recNext(rec, after = null) {
+  if (!rec.start_date) return null;
+  const from = after && after > rec.start_date ? after : rec.start_date;
+  let [y, m] = from.split("-").map(Number); m -= 1;
+  if (rec.frequency === "anno") m = (rec.month_of_year || m + 1) - 1;
+  for (let i = 0; i < 40; i++) {
+    const d = recDate(rec, y, m);
+    if (d >= rec.start_date && (!after || d > after)) return d;
+    if (rec.frequency === "anno") y++; else if (++m > 11) { m = 0; y++; }
+  }
+  return null;
+}
+function recLabel(rec) {
+  const d = rec.day_of_month;
+  const g = d >= 31 ? "l'ultimo giorno" : d === 1 ? "il 1°" : d === 8 || d === 11 ? `l'${d}` : `il ${d}`;
+  return rec.frequency === "anno" ? `Ogni anno, ${g} ${MESI[(rec.month_of_year || 1) - 1]}` : `Ogni mese, ${g}`;
+}
+const recMonthly = (rec) => (rec.frequency === "anno" ? Math.round(rec.amount_cents / 12) : rec.amount_cents);
+
+async function loadRecurring() {
+  const { data, error } = await sb.from("recurring").select("*").order("created_at");
+  state.recMissing = !!error;
+  state.recurring = error ? [] : data.filter((r) => r.start_date); // i modelli vecchi senza partenza non contano
+  return state.recurring;
+}
+
+// aggiunge quello che è arrivato a scadenza (all'apertura e dopo ogni modifica)
+let recRunning = false;
+async function runRecurring(quiet = false) {
+  if (recRunning) return;
+  recRunning = true;
+  try {
+    const recs = (await loadRecurring()).filter((r) => r.active);
+    const today = isoDate(new Date());
+    const added = [];
+    let savedCents = 0;
+    for (const rec of recs) {
+      let last = rec.last_date, d = recNext(rec, last), n = 0;
+      while (d && d <= today && n < 36) {
+        if (rec.kind === "risparmio") {
+          const cents = await applySaving(rec);
+          if (cents === null) break;          // desiderio chiuso: il risparmio si ferma
+          savedCents += cents;
+        } else {
+          const { error } = await sb.from("transactions").insert({
+            date: d, amount_cents: rec.amount_cents, kind: rec.kind, category_id: rec.category_id,
+            description: rec.description, recurring_id: rec.id,
+          });
+          if (error && !/duplicate|23505/i.test(`${error.message} ${error.code}`)) break;
+          if (!error) added.push(rec);
+        }
+        last = d; n++; d = recNext(rec, d);
+      }
+      if (last !== rec.last_date) {
+        rec.last_date = last;
+        await sb.from("recurring").update({ last_date: last }).eq("id", rec.id);
+      }
+    }
+    if (added.length || savedCents) {
+      if (!quiet) {
+        const names = [...new Set(added.map((r) => r.description))];
+        const text = added.length
+          ? `${added.length === 1 ? "Aggiunto 1 movimento periodico" : `Aggiunti ${added.length} movimenti periodici`}: ${names.slice(0, 2).join(", ")}${names.length > 2 ? "…" : ""}`
+          : `${fmt(savedCents)} messi da parte in automatico per i Desideri`;
+        toast(text, added.length ? { label: "Vedi", onClick: () => { location.hash = "#mesi"; } } : null);
+      }
+      if (state.page === "mesi") loadMonth();
+      if (state.page === "dashboard") loadDashboard();
+      if (state.page === "desideri") loadWishes();
+    }
+  } finally { recRunning = false; }
+}
+
+// risparmio periodico: soldi messi da parte; null se il desiderio non è più attivo
+async function applySaving(rec) {
+  if (!rec.wish_id) { await setPool(wishPool() + rec.amount_cents); return rec.amount_cents; }
+  const { data: w } = await sb.from("wishes").select("*").eq("id", rec.wish_id).maybeSingle();
+  if (!w || w.status !== "attivo") {
+    await sb.from("recurring").update({ active: false }).eq("id", rec.id);
+    return null;
+  }
+  const cents = Math.max(0, Math.min(rec.amount_cents, w.price_cents - w.saved_cents)); // non oltre il prezzo
+  if (cents) await sb.from("wishes").update({ saved_cents: w.saved_cents + cents }).eq("id", w.id);
+  return cents;
+}
+
+// ---------- "Ripeti" nel pannello + ----------
+function syncRepRow() {
+  const rec = !!state.editingRec;
+  const show = rec || (!state.editing && !state.wishBuying && !state.dupOf && state.kind !== "anticipo");
+  $("rep-row").hidden = !show;
+  syncSubRow();
+  updateRepHint();
+}
+// "Tipo" (abbonamento o pagamento periodico) solo per le uscite che si ripetono
+function syncSubRow() {
+  $("sub-row").hidden = $("rep-row").hidden || !$("f-repeat").value || state.kind !== "uscita";
+}
+function updateRepHint() {
+  const hint = $("rep-hint");
+  const freq = $("f-repeat").value, date = $("f-date").value;
+  if ($("rep-row").hidden || !freq || !date) { hint.hidden = true; return; }
+  const [y, m, d] = date.split("-").map(Number);
+  const rec = { frequency: freq, day_of_month: d, month_of_year: m, start_date: date };
+  const today = isoDate(new Date());
+  const next = date > today ? date : recNext(rec, today);
+  hint.textContent = state.editingRec
+    ? `${recLabel(rec)}. Il prossimo arriva ${shortDay(next)}. I movimenti già aggiunti non cambiano.`
+    : `${recLabel(rec)}${date <= today ? ": questo lo aggiungo subito" : ""}, il prossimo arriva ${shortDay(date > today ? date : next)}. Lo trovi nella sezione Abbonamenti.`;
+  hint.hidden = false;
+}
+$("f-repeat").addEventListener("change", () => { syncSubRow(); updateRepHint(); });
+$("f-date").addEventListener("change", updateRepHint);
+
+async function saveNewRec(row, freq) {
+  const [, m, d] = row.date.split("-").map(Number);
+  const rec = {
+    kind: row.kind, category_id: row.category_id, amount_cents: row.amount_cents,
+    description: row.description || catById(row.category_id)?.name || "Movimento",
+    frequency: freq, day_of_month: d, month_of_year: freq === "anno" ? m : null,
+    start_date: row.date, last_date: null, active: true,
+    is_subscription: row.kind === "uscita" && $("f-sub").value === "1",
+  };
+  const { error } = await sb.from("recurring").insert(rec);
+  if (error) {
+    return setMsg($("sheet-msg"), /frequency|start_date|schema cache|PGRST204|42703/i.test(`${error.message} ${error.code}`)
+      ? "Prima esegui lo script della 0.6.0 in Supabase." : "Errore nel salvataggio: " + traduciErrore(error.message), true);
+  }
+  state.lastCategory[row.kind] = row.category_id;
+  closeSheet();
+  await runRecurring(true);
+  const today = isoDate(new Date());
+  toast(row.date <= today ? `Movimento salvato: si ripete ${recLabel(rec).toLowerCase()}` : `Periodico salvato: il primo arriva ${shortDay(row.date)}`);
+  refreshAfterChange(row.date);
+  if (state.page === "abbonamenti") renderPeriodic();
+}
+
+// ---------- modifica di un periodico (stesso pannello del +) ----------
+function openRecSheet(rec) {
+  openSheet(null);
+  state.editingRec = rec;
+  state.categoryId = rec.category_id;
+  setKind(rec.kind);
+  $("sheet-title").textContent = "Movimento periodico";
+  $("f-amount").value = fmtPlain(rec.amount_cents);
+  $("f-desc").value = rec.description || "";
+  const next = recNext(rec, rec.last_date) || rec.start_date;
+  $("f-date").value = next;
+  state.editingRec.shownDate = next;
+  $("f-repeat").value = rec.frequency;
+  $("f-repeat").querySelector('option[value=""]').disabled = true;
+  $("f-sub").value = rec.is_subscription ? "1" : "0";
+  $("freq-box").hidden = true;
+  $("kind-anticipo").hidden = true;
+  $("sheet-foot").hidden = false;
+  $("sheet-dup").hidden = true;
+  $("sheet-pause").hidden = false;
+  $("sheet-pause").textContent = rec.active ? "Sospendi" : "Riattiva";
+  syncRepRow();
+  setMsg($("sheet-msg"), "");
+}
+
+async function saveRecFromSheet() {
+  const rec = state.editingRec, msg = $("sheet-msg");
+  const amount = parseAmount($("f-amount").value);
+  if (amount === null) return setMsg(msg, "Inserisci un importo valido, es. 12,50.", true);
+  if (!state.categoryId) return setMsg(msg, "Scegli una categoria.", true);
+  const date = $("f-date").value;
+  if (!date) return setMsg(msg, "Scegli una data.", true);
+  const [, m, d] = date.split("-").map(Number);
+  const freq = $("f-repeat").value || rec.frequency;
+  const patch = {
+    kind: state.kind, category_id: state.categoryId, amount_cents: amount,
+    description: $("f-desc").value.trim() || catById(state.categoryId)?.name || "Movimento",
+    frequency: freq, day_of_month: d, month_of_year: freq === "anno" ? m : null,
+    is_subscription: state.kind === "uscita" && $("f-sub").value === "1",
+  };
+  // data o frequenza cambiate: si riparte da quella data (i mesi già fatti restano, senza doppioni)
+  if (date !== rec.shownDate || freq !== rec.frequency) Object.assign(patch, { start_date: date, last_date: null });
+  const { error } = await sb.from("recurring").update(patch).eq("id", rec.id);
+  if (error) return setMsg(msg, "Errore nel salvataggio: " + traduciErrore(error.message), true);
+  closeSheet();
+  toast("Movimento periodico aggiornato");
+  await runRecurring(true);
+  renderPeriodic();
+}
+
+$("sheet-pause").addEventListener("click", async () => {
+  const rec = state.editingRec;
+  if (!rec) return;
+  // riattivando, riparte dal giorno dell'attivazione (compreso): i mesi in pausa non si recuperano
+  const patch = rec.active ? { active: false } : { active: true, last_date: isoDate(new Date(Date.now() - 864e5)) };
+  const { error } = await sb.from("recurring").update(patch).eq("id", rec.id);
+  if (error) return toast("Errore: " + traduciErrore(error.message));
+  closeSheet();
+  toast(rec.active ? `${rec.description}: in pausa` : `${rec.description}: di nuovo attivo`);
+  renderPeriodic();
+});
+
+function deleteRec(rec) {
+  actionSheet({
+    title: `Eliminare ${rec.description}?`,
+    message: "I movimenti già aggiunti restano dove sono.",
+    actions: [{ label: "Elimina movimento periodico", danger: true, onClick: async () => {
+      const { error } = await sb.from("recurring").delete().eq("id", rec.id);
+      if (error) return toast("Errore: " + traduciErrore(error.message));
+      closeSheet();
+      toast("Movimento periodico eliminato");
+      renderPeriodic();
+    } }],
+  });
+}
+
+// ---------- sezione Abbonamenti ----------
+$("per-new").addEventListener("click", () => {
+  openSheet(null);
+  setKind("uscita");
+  $("f-repeat").value = "mese";
+  $("f-sub").value = "1";
+  $("sheet-title").textContent = "Nuovo abbonamento";
+  $("freq-box").hidden = true;
+  $("kind-anticipo").hidden = true;
+  syncRepRow();
+});
+
+async function renderPeriodic() {
+  const recs = await loadRecurring();
+  if (!state.wishes) { const { data } = await sb.from("wishes").select("*"); state.wishes = data || []; }
+  const box = $("per-groups");
+  box.replaceChildren();
+  if (state.recMissing) {
+    box.append(el("p", "secondary foot", "I movimenti periodici non sono ancora disponibili: esegui lo script della 0.6.0 in Supabase."));
+    $("per-sum").hidden = true;
+    return;
+  }
+  // quanto pesano al mese (gli annuali divisi per 12)
+  const on = recs.filter((r) => r.active);
+  const sum_ = $("per-sum");
+  sum_.hidden = !on.length;
+  sum_.replaceChildren(...REC_GROUPS.map((g) => [g, on.filter(g.test).reduce((a, r) => a + recMonthly(r), 0)]).filter(([, c]) => c).map(([g, c]) => {
+    const d = el("div", "per-kpi " + g.id);
+    d.append(el("span", "secondary small", `${g.title} al mese`), el("strong", null, fmt(c)));
+    return d;
+  }));
+  const today = isoDate(new Date());
+  for (const g of REC_GROUPS) {
+    const list = recs.filter(g.test).sort((a, b) => (b.active - a.active) || (recNext(a, a.last_date) || "").localeCompare(recNext(b, b.last_date) || ""));
+    if (!list.length) continue;
+    box.append(el("h3", "section-title", g.title));
+    const ul = el("ul", "card list settings per-list");
+    for (const r of list) {
+      const k = r.kind;
+      const li = el("li", "tap" + (r.active ? "" : " paused"));
+      if (k === "risparmio") {
+        const ico = el("span", "cat-ico");
+        ico.style.setProperty("--c", "#ff9f0a");
+        ico.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 11a7 6 0 0 1 12.5-3.5H20v4l-2 1v3h-2l-1 2h-2v-1.5h-3V18H8l-1-2.5A6 6 0 0 1 5 11z"/></svg>';
+        li.append(ico);
+      } else li.append(catIcon(catById(r.category_id)));
+      const label = el("span", "label");
+      const wish = r.wish_id ? state.wishes.find((w) => w.id === r.wish_id) : null;
+      const name = k === "risparmio" ? (r.wish_id ? wish?.name || r.description : POOL_NAME) : r.description;
+      const next = recNext(r, r.last_date);
+      const when = r.active ? `${recLabel(r)} · prossimo ${next === today ? "oggi" : advDate(next)}` : `${recLabel(r)} · in pausa`;
+      const sub = el("small");
+      if (g.tag) sub.append(el("b", "per-tag " + g.id, g.tag), " · ");
+      sub.append(when);
+      label.append(el("span", null, name), sub);
+      const sign = k === "entrata" ? "+ " : k === "risparmio" ? "" : "− ";
+      li.append(label, el("span", "value per-amt" + (k === "entrata" ? " in" : ""), sign + fmt(r.amount_cents)), el("span", "chev", "›"));
+      li.addEventListener("click", () => (k === "risparmio" ? openWishAuto(r.wish_id ? (wish || { id: r.wish_id, name: r.description, price_cents: 0, saved_cents: 0 }) : poolItem()) : openRecSheet(r)));
+      ul.append(li);
+    }
+    box.append(ul);
+  }
+  if (!recs.length) box.append(el("p", "secondary foot per-empty", "Nessun abbonamento o pagamento periodico. Tocca \"+ Nuovo\", oppure scegli \"Ripeti\" quando aggiungi un movimento con +."));
+}
+
+// ---------- Dashboard: in arrivo nei prossimi 7 giorni ----------
+async function renderUpcoming() {
+  const recs = (await loadRecurring()).filter((r) => r.active);
+  const today = isoDate(new Date());
+  const lim = isoDate(new Date(Date.now() + 7 * 864e5));
+  const items = recs.map((r) => ({ r, d: recNext(r, r.last_date && r.last_date > today ? r.last_date : today) }))
+    .filter((x) => x.d && x.d > today && x.d <= lim).sort((a, b) => a.d.localeCompare(b.d)).slice(0, 4);
+  $("upcoming").hidden = !items.length;
+  const tomorrow = isoDate(new Date(Date.now() + 864e5));
+  $("up-list").replaceChildren(...items.map(({ r, d }) => {
+    const li = el("li");
+    const sd = shortDay(d);
+    const when = el("span", "up-when", d === tomorrow ? "Domani" : sd[0].toUpperCase() + sd.slice(1));
+    const name = r.kind === "risparmio" ? `Risparmio · ${r.wish_id ? r.description : POOL_NAME}` : r.description;
+    const sign = r.kind === "entrata" ? "+ " : r.kind === "risparmio" ? "" : "− ";
+    li.append(when, el("span", "up-name", name), el("span", "up-amt" + (r.kind === "entrata" ? " in" : ""), sign + fmt(r.amount_cents)));
+    return li;
+  }));
+}
+$("upcoming-all").addEventListener("click", () => { location.hash = "#abbonamenti"; });
+
+// ---------- Dashboard: recap del mese passato (nei primi 10 giorni del mese) ----------
+const recapSeen = () => { try { return localStorage.getItem("flunora.recapSeen") || ""; } catch { return ""; } };
+async function renderRecap() {
+  const card = $("recap");
+  const now = new Date();
+  const prev = addMonths(firstOfMonth(now), -1), before = addMonths(prev, -1);
+  const key = monthKey(prev);
+  if (now.getDate() > 10 || recapSeen() >= key) { card.hidden = true; return; }
+  const { data, error } = await sb.from("transactions").select("date, amount_cents, kind, category_id")
+    .gte("date", isoDate(before)).lt("date", isoDate(firstOfMonth(now)));
+  if (error) { card.hidden = true; return; }
+  const inM = (t, d) => t.date >= isoDate(d) && t.date < isoDate(addMonths(d, 1));
+  const cur = data.filter((t) => inM(t, prev)), old = data.filter((t) => inM(t, before));
+  if (!cur.length) { card.hidden = true; return; }
+  const tot = (rows, k) => rows.filter((t) => t.kind === k).reduce((a, t) => a + t.amount_cents, 0);
+  const ent = tot(cur, "entrata"), usc = tot(cur, "uscita"), inv = tot(cur, "investimento");
+  const diff = ent - usc - inv;
+  const mese = MESI[prev.getMonth()];
+  $("recap-title").textContent = `${mese[0].toUpperCase()}${mese.slice(1)} in breve`;
+  $("recap-grid").replaceChildren(...[["Entrate", ent, "in"], ["Uscite", usc, "out"], ["Rimasti", diff, diff < 0 ? "out" : "in"]].map(([l, c, k]) => {
+    const d = el("div", "recap-kpi " + k);
+    d.append(el("span", "secondary small", l), el("strong", null, (l === "Rimasti" && c < 0 ? "− " : "") + fmt(Math.abs(c))));
+    return d;
+  }));
+  const byCat = new Map();
+  cur.filter((t) => t.kind === "uscita").forEach((t) => byCat.set(t.category_id, (byCat.get(t.category_id) || 0) + t.amount_cents));
+  const top = [...byCat].sort((a, b) => b[1] - a[1])[0];
+  const oldUsc = tot(old, "uscita");
+  const parts = [];
+  if (top) parts.push(`Spesa più alta: ${catById(top[0])?.name || "altro"} (${fmt(top[1])})`);
+  if (oldUsc) {
+    const pct = Math.round(((usc - oldUsc) / oldUsc) * 100);
+    parts.push(pct === 0 ? `uscite uguali a ${MESI[before.getMonth()]}` : `uscite ${pct > 0 ? "+" : "−"}${Math.abs(pct)}% rispetto a ${MESI[before.getMonth()]}`);
+  }
+  $("recap-note").textContent = parts.join(" · ");
+  card.hidden = false;
+}
+$("recap-close").addEventListener("click", () => {
+  try { localStorage.setItem("flunora.recapSeen", monthKey(addMonths(firstOfMonth(new Date()), -1))); } catch {}
+  $("recap").hidden = true;
+});
+
+// ---------- Desideri: risparmio periodico ----------
+async function loadSavingRecs() {
+  const { data, error } = await sb.from("recurring").select("*").eq("kind", "risparmio");
+  state.savingRecs = error ? [] : data.filter((r) => r.active);
+}
+const savingRecFor = (t) => (state.savingRecs || []).find((r) => (t.pool ? !r.wish_id : r.wish_id === t.id));
+
+function openWishAuto(target) {
+  const rec = savingRecFor(target);
+  state.wishAuto = { target, rec };
+  $("wauto-title").textContent = target.name;
+  const sel = $("wauto-day");
+  if (!sel.options.length) {
+    for (let d = 1; d <= 28; d++) sel.append(new Option(String(d), String(d)));
+    sel.append(new Option("ultimo giorno", "31"));
+  }
+  sel.value = String(rec?.day_of_month || 1);
+  $("wauto-amount").value = rec ? fmtPlain(rec.amount_cents) : "";
+  const plan = target.pool ? null : wishPlan(target);
+  const left = target.pool ? 0 : Math.max(0, target.price_cents - target.saved_cents);
+  $("wauto-quick").replaceChildren(...[plan && left ? [`${fmt(plan.monthly)} al mese, per arrivarci entro ${plan.label}`, plan.monthly] : null]
+    .filter(Boolean).map(([label, cents]) => {
+      const b = el("button", "chip", label);
+      b.type = "button";
+      b.addEventListener("click", () => { $("wauto-amount").value = fmtPlain(cents); });
+      return b;
+    }));
+  $("wauto-note").textContent = target.pool
+    ? "Ogni mese, in quel giorno, Flunora mette da parte questa cifra nel Salvadanaio quando apri l'app. I soldi restano sul conto: scendono solo dal Disponibile."
+    : "Ogni mese, in quel giorno, Flunora mette da parte questa cifra quando apri l'app. Si ferma da sola quando il desiderio è completo, comprato o se rinunci.";
+  $("wauto-stop").hidden = !rec;
+  setMsg($("wauto-msg"), "");
+  $("wauto-sheet").scrollTop = 0;
+  $("wauto-sheet").classList.add("open");
+  $("wauto-sheet").setAttribute("aria-hidden", "false");
+  $("wauto-backdrop").classList.add("open");
+}
+function closeWishAuto() {
+  $("wauto-sheet").classList.remove("open");
+  $("wauto-sheet").setAttribute("aria-hidden", "true");
+  $("wauto-backdrop").classList.remove("open");
+  document.activeElement?.blur();
+}
+$("wauto-cancel").addEventListener("click", closeWishAuto);
+$("wauto-backdrop").addEventListener("click", closeWishAuto);
+$("wauto-sheet").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const { target, rec } = state.wishAuto, msg = $("wauto-msg");
+  const cents = parseAmount($("wauto-amount").value);
+  if (cents === null) { setMsg(msg, "Inserisci un importo, es. 50.", true); return $("wauto-amount").focus(); }
+  const day = Number($("wauto-day").value);
+  // parte dal prossimo giorno scelto (oggi compreso)
+  const now = new Date(), today = isoDate(now);
+  const probe = { frequency: "mese", day_of_month: day, start_date: isoDate(firstOfMonth(now)) };
+  const start = recNext(probe, isoDate(new Date(Date.now() - 864e5)));
+  const row = { amount_cents: cents, day_of_month: day, description: target.name, active: true };
+  const { error } = rec
+    ? await sb.from("recurring").update(day !== rec.day_of_month ? { ...row, start_date: start, last_date: null } : row).eq("id", rec.id)
+    : await sb.from("recurring").insert({ ...row, kind: "risparmio", category_id: null, frequency: "mese", month_of_year: null,
+        wish_id: target.pool ? null : target.id, start_date: start, last_date: null });
+  if (error) {
+    return setMsg(msg, /risparmio|wish_id|frequency|check|schema cache|PGRST204|42703|23514/i.test(`${error.message} ${error.code}`)
+      ? "Prima esegui lo script della 0.6.0 in Supabase." : "Errore: " + traduciErrore(error.message), true);
+  }
+  closeWishAuto();
+  toast(start === today ? `Risparmio periodico attivo: oggi ${fmt(cents)} per ${target.name}` : `Risparmio periodico attivo: il primo ${shortDay(start)}`);
+  await runRecurring(true);
+  if (state.page === "desideri") loadWishes();
+  if (state.page === "abbonamenti") renderPeriodic();
+});
+$("wauto-stop").addEventListener("click", async () => {
+  const { target, rec } = state.wishAuto;
+  if (!rec) return;
+  const { error } = await sb.from("recurring").delete().eq("id", rec.id);
+  if (error) return setMsg($("wauto-msg"), "Errore: " + traduciErrore(error.message), true);
+  closeWishAuto();
+  toast(`Risparmio periodico tolto da ${target.name}`);
+  if (state.page === "desideri") loadWishes();
+  if (state.page === "abbonamenti") renderPeriodic();
+});
 
 // =========================================================
 // IMPR-004 (0.5.1) — BLOCCO CON FACE ID

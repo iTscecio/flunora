@@ -1242,3 +1242,49 @@ body.is-locked { overflow: hidden; }
 .pool-ico svg { width: 18px; height: 18px; fill: none; stroke: #fff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .adv-btn[hidden] { display: none; }
 .left-banner .ic { background: #34c759; }
+
+/* =========================================================
+   0.6.0 — PERIODICI, RECAP, IN ARRIVO, RISPARMIO PERIODICO
+   ========================================================= */
+.group-row select {
+  flex: 1; min-width: 0; border: 0; background: transparent; padding: 12px 0;
+  text-align: right; text-align-last: right; color: var(--accent); font: inherit; outline: none;
+  -webkit-appearance: none; appearance: none; cursor: pointer;
+}
+.group-row[hidden], #rep-hint[hidden] { display: none; }
+.per-sum { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 8px; padding: 14px 16px; margin-bottom: 4px; }
+.per-sum[hidden] { display: none; }
+.per-kpi, .recap-kpi { display: grid; gap: 2px; }
+.per-kpi strong, .recap-kpi strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+.per-kpi.in strong, .recap-kpi.in strong, .per-amt.in, .up-amt.in { color: var(--good, #248a3d); }
+.per-kpi.ent strong { color: var(--good); }
+.per-kpi.des strong { color: #ff9f0a; }
+.per-tag { font-weight: 600; }
+.per-tag.pag { color: #007aff; }
+.per-tag.ent { color: var(--good); }
+.per-tag.des { color: #ff9f0a; }
+#sub-row[hidden] { display: none; }
+.per-list li .label { display: grid; gap: 2px; }
+.per-list li .label small { color: var(--secondary); font-size: 13px; }
+.per-list li.paused .label, .per-list li.paused .cat-ico, .per-list li.paused .value { opacity: .45; }
+.per-amt { font-variant-numeric: tabular-nums; }
+.recap, .upcoming { display: grid; gap: 10px; padding: 14px 16px; }
+.recap[hidden], .upcoming[hidden] { display: none; }
+.recap-head, .up-head { display: flex; align-items: center; justify-content: space-between; }
+.recap-head strong, .up-head strong { font-size: 17px; }
+.recap-head .x { border: 0; background: var(--fill); color: var(--secondary); width: 28px; height: 28px; border-radius: 50%; font-size: 18px; line-height: 1; cursor: pointer; }
+.recap-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.recap-kpi.out strong { color: var(--text); }
+.up-head .link-btn { font-size: 15px; }
+.up-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.up-list li { display: grid; grid-template-columns: 88px 1fr auto; gap: 10px; align-items: baseline; padding: 8px 0; }
+.up-list li + li { border-top: .5px solid var(--separator); }
+.up-when { color: var(--secondary); font-size: 14px; }
+.up-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.up-amt { font-variant-numeric: tabular-nums; font-weight: 600; }
+.wish-auto { color: #c77700; margin: 0; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .wish-auto { color: #ffb340; } }
+:root[data-theme="dark"] .wish-auto { color: #ffb340; }
+#wauto-quick { margin: 4px 0 12px; }
+#wauto-stop[hidden] { display: none; }
+#wauto-stop { width: 100%; margin-top: 16px; }

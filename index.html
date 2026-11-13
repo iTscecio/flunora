@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611131139">
+  <link rel="stylesheet" href="css/style.css?v=202611131330">
 </head>
 <body>
 
@@ -87,6 +87,17 @@
         <button type="button" id="saldo-card" class="card saldo" aria-label="Saldo totale"></button>
         <button type="button" id="saldo-eye" class="saldo-eye" hidden></button>
       </div>
+
+      <!-- 0.6.0: recap del mese passato e periodici in arrivo -->
+      <section class="card recap" id="recap" hidden>
+        <div class="recap-head"><strong id="recap-title"></strong><button type="button" id="recap-close" class="x" aria-label="Chiudi">&times;</button></div>
+        <div class="recap-grid" id="recap-grid"></div>
+        <p class="secondary small" id="recap-note"></p>
+      </section>
+      <section class="card upcoming" id="upcoming" hidden>
+        <div class="up-head"><strong>In arrivo</strong><button type="button" id="upcoming-all" class="link-btn">Abbonamenti &rsaquo;</button></div>
+        <ul class="up-list" id="up-list"></ul>
+      </section>
 
       <div class="kpis">
         <div class="card kpi"><span class="secondary">Entrate <span class="y"></span></span><strong id="d-entrate">–</strong></div>
@@ -177,13 +188,12 @@
     </main>
 
     <!-- ---------- SEZIONI SEGNAPOSTO (contenuto in arrivo) ---------- -->
+    <!-- ---------- ABBONAMENTI (0.6.0): abbonamenti, pagamenti ed entrate periodiche, risparmio periodico ---------- -->
     <main id="page-abbonamenti" class="page" hidden>
-      <header class="page-head"><h1>Abbonamenti</h1></header>
-      <div class="card placeholder">
-        <span class="ph-ico" style="--c:#ff2d55"><svg viewBox="0 0 24 24" class="stroke"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg></span>
-        <h2>In arrivo</h2>
-        <p class="secondary">Qui gestirai i tuoi abbonamenti: costo mensile e annuale, rinnovi e scadenze.</p>
-      </div>
+      <header class="page-head"><h1>Abbonamenti</h1><button type="button" id="per-new" class="wish-new">+ Nuovo</button></header>
+      <div class="card per-sum" id="per-sum"></div>
+      <div id="per-groups"></div>
+      <p class="secondary small foot">Flunora aggiunge abbonamenti e pagamenti periodici quando apri l'app, ognuno con la sua data: se la apri dopo qualche giorno arrivano tutti, senza doppioni. Il risparmio periodico dei Desideri si imposta dal menu del desiderio.</p>
     </main>
 
     <main id="page-auto" class="page" hidden>
@@ -237,6 +247,7 @@
           <b class="wish-price" id="pool-total"></b>
         </div>
         <p class="secondary small wish-info" id="pool-sub"></p>
+        <p class="small wish-auto" id="pool-auto" hidden></p>
         <div class="wish-actions">
           <button type="button" class="adv-btn" id="pool-put">Metti da parte</button>
           <button type="button" class="adv-btn ghost" id="pool-assign">Assegna</button>
@@ -290,8 +301,6 @@
             <span class="label">Importa estratto conto</span><span class="chev">&rsaquo;</span></li>
           <li class="tap" id="freq-reset" hidden><span class="ico" style="--c:#af52de"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v5h5"/></svg></span>
             <span class="label">Mostra le scorciatoie nascoste</span><span id="freq-reset-n" class="value"></span></li>
-          <li class="soon" data-ver="0.6"><span class="ico" style="--c:#ff2d55"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg></span>
-            <span class="label">Movimenti periodici</span><span class="badge">Coming Soon</span></li>
         </ul>
 
         <h3 class="section-title">Sicurezza</h3>
@@ -392,11 +401,17 @@
       <div class="group">
         <label class="group-row"><span>Data</span><input type="date" id="f-date"></label>
         <label class="group-row"><span>Descrizione</span><input id="f-desc" placeholder="Facoltativa" maxlength="120" autocomplete="off"></label>
+        <label class="group-row" id="rep-row"><span>Ripeti</span>
+          <select id="f-repeat"><option value="">Mai</option><option value="mese">Ogni mese</option><option value="anno">Ogni anno</option></select></label>
+        <label class="group-row" id="sub-row" hidden><span>Tipo</span>
+          <select id="f-sub"><option value="1">Abbonamento</option><option value="0">Pagamento periodico</option></select></label>
       </div>
+      <p id="rep-hint" class="secondary small foot" hidden></p>
 
       <p id="sheet-msg" class="msg" role="status"></p>
       <div class="sheet-foot" id="sheet-foot" hidden>
         <button type="button" id="sheet-dup" class="btn-plain">Duplica</button>
+        <button type="button" id="sheet-pause" class="btn-plain" hidden>Sospendi</button>
         <button type="button" id="sheet-delete" class="btn-danger">Elimina</button>
       </div>
     </form>
@@ -704,6 +719,29 @@
       <p id="wmove-msg" class="msg" role="status"></p>
     </form>
 
+    <!-- ---------- 0.6.0: RISPARMIO PERIODICO ---------- -->
+    <div id="wauto-backdrop" class="sheet-backdrop top"></div>
+    <form id="wauto-sheet" class="sheet top" aria-hidden="true" novalidate>
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <button type="button" id="wauto-cancel" class="link-btn">Annulla</button>
+        <h2 id="wauto-title">Risparmio periodico</h2>
+        <button type="submit" id="wauto-save" class="link-btn strong">Salva</button>
+      </div>
+      <label class="amount">
+        <span>€</span>
+        <input id="wauto-amount" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Quanto ogni mese">
+      </label>
+      <div id="wauto-quick" class="chips"></div>
+      <div class="group">
+        <label class="group-row"><span>Ogni mese il</span>
+          <select id="wauto-day"></select></label>
+      </div>
+      <p id="wauto-note" class="secondary small foot"></p>
+      <button type="button" id="wauto-stop" class="btn-danger" hidden>Togli il risparmio periodico</button>
+      <p id="wauto-msg" class="msg" role="status"></p>
+    </form>
+
     <!-- ---------- 0.4.4: PANNELLO ALTRE SEZIONI ---------- -->
     <div id="more-backdrop" class="sheet-backdrop topmost"></div>
     <div id="more-sheet" class="action-sheet more-sheet" aria-hidden="true" role="dialog" aria-labelledby="more-title">
@@ -721,11 +759,11 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611131139"></script>
-  <script src="js/releases.js?v=202611131139"></script>
-  <script src="js/icons.js?v=202611131139"></script>
-  <script src="js/app.js?v=202611131139"></script>
-  <script src="js/bank-bdp.js?v=202611131139"></script>
-  <script src="js/import.js?v=202611131139"></script>
+  <script src="js/config.js?v=202611131330"></script>
+  <script src="js/releases.js?v=202611131330"></script>
+  <script src="js/icons.js?v=202611131330"></script>
+  <script src="js/app.js?v=202611131330"></script>
+  <script src="js/bank-bdp.js?v=202611131330"></script>
+  <script src="js/import.js?v=202611131330"></script>
 </body>
 </html>
