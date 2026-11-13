@@ -1363,3 +1363,15 @@ body.is-locked { overflow: hidden; }
 :root[data-theme="dark"] .per-flag { color: #ffb340; }
 .up-note { color: #c77700; }
 .sub-extra .group-row > .switch { width: 51px; }
+
+/* 0.6.3 — costo all'anno e cambi di prezzo */
+.per-kpi small { font-size: 13px; }
+.per-year { color: var(--secondary); }
+.per-price { font-weight: 600; }
+.per-price.up { color: var(--bad); }
+.per-price.down { color: var(--good); }
+.rec-info { margin-top: 12px; padding: 4px 16px; }
+.rec-info[hidden] { display: none; }
+.rec-info-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; }
+.rec-info-row + .rec-info-row { border-top: .5px solid var(--separator); }
+.rec-info-row strong { font-variant-numeric: tabular-nums; text-align: right; }
