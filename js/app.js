@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.5.0";
+const APP_VERSION = "0.5.1";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -111,6 +111,7 @@ let sessionChecked = false;
 
 async function init() {
   $("set-version").textContent = APP_VERSION;
+  if (lockCfg()) { $("lock").hidden = false; document.body.classList.add("is-locked"); } // IMPR-004: niente dati visibili prima di Face ID
   const { data } = await sb.auth.getSession();
   handleSession(data.session);
   sb.auth.onAuthStateChange((_e, session) => handleSession(session));
@@ -121,6 +122,8 @@ function handleSession(session) {
   if (sessionChecked && user?.id === state.user?.id) return;
   sessionChecked = true;
   state.user = user;
+  if (!user) hideLock();
+  else if (lockCfg()) showLock(); // IMPR-004: all'apertura chiede Face ID
   $("view-login").hidden = !!user;
   $("view-app").hidden = !user;
   if (user) startApp();
@@ -153,7 +156,7 @@ $("btn-signup").addEventListener("click", async () => {
 });
 
 $("btn-logout").addEventListener("click", async () => {
-  if (confirm("Vuoi uscire da Flunora?")) await sb.auth.signOut();
+  if (confirm("Vuoi uscire da Flunora?")) { lockOff(); await sb.auth.signOut(); }
 });
 
 function traduciErrore(m) {
@@ -238,6 +241,7 @@ $("year-next").addEventListener("click", () => { state.year++; playClass($("page
 async function loadDashboard() {
   loadBalance();   // saldo totale (0.2.4), indipendente dall'anno mostrato
   renderBackupBanner();   // promemoria backup (0.3.0)
+  renderLeftoverBanner(); // avanzo del mese (0.5.1)
   const y = state.year;
   $("year-label").textContent = y;
   document.querySelectorAll("#page-dashboard .y").forEach((s) => (s.textContent = y));
@@ -937,7 +941,7 @@ function openSheet(tx) {
   state.editing = tx;
   setMsg($("sheet-msg"), "");
   $("sheet-title").textContent = tx ? "Modifica movimento" : "Nuovo movimento";
-  $("sheet-delete").hidden = !tx;
+  $("sheet-foot").hidden = !tx; // 0.5.1: Duplica ed Elimina solo in modifica
   if (tx) {
     state.categoryId = tx.category_id;
     setKind(tx.kind);
@@ -971,6 +975,7 @@ function openSheet(tx) {
 
 function closeSheet() {
   state.wishBuying = null;
+  state.dupOf = null;
   $("sheet").classList.remove("open");
   $("sheet").setAttribute("aria-hidden", "true");
   $("sheet-backdrop").classList.remove("open");
@@ -1030,7 +1035,7 @@ function freqItems(kind) {
 
 function renderFreq() {
   const box = $("freq-box"), row = $("freq-row");
-  const items = state.editing || state.wishBuying ? [] : freqItems(state.kind);
+  const items = state.editing || state.wishBuying || state.dupOf ? [] : freqItems(state.kind);
   box.hidden = items.length === 0;
   row.replaceChildren(...items.map((it) => {
     const b = el("button", "freq-chip");
@@ -1108,10 +1113,17 @@ $("freq-reset").addEventListener("click", () => {
 // "Comprato" apre il pannello + già compilato; salvato, il desiderio si chiude.
 // =========================================================
 const wishesOn = () => state.sections.some((x) => x.id === "desideri" && x.on);
+// 0.5.1: Salvadanaio = soldi per i Desideri non assegnati a un desiderio (nelle impostazioni sincronizzate)
+const wishPool = () => state.settingsData?.wish_pool_cents || 0;
+const POOL_NAME = "Salvadanaio";
+function setPool(cents) {
+  state.settingsData.wish_pool_cents = Math.max(0, cents);
+  return saveSettingsData("Salvadanaio salvato solo su questo dispositivo");
+}
 
 async function loadWishSaved() {
   const { data, error } = await sb.from("wishes").select("saved_cents").eq("status", "attivo");
-  state.wishSavedCents = error ? 0 : data.reduce((a, w) => a + w.saved_cents, 0);
+  state.wishSavedCents = (error ? 0 : data.reduce((a, w) => a + w.saved_cents, 0)) + wishPool(); // + Salvadanaio (0.5.1)
 }
 
 // mesi da oggi alla scadenza (almeno 1) e quanto mettere da parte al mese
@@ -1133,19 +1145,22 @@ async function loadWishes() {
   const open = data.filter((w) => w.status === "attivo");
   const closed = data.filter((w) => w.status !== "attivo");
   const saved = open.reduce((a, w) => a + w.saved_cents, 0);
-  state.wishSavedCents = saved;
-  $("wish-total").textContent = fmt(saved);
+  const pool = wishPool();
+  state.wishSavedCents = saved + pool;
+  $("wish-total").textContent = fmt(saved + pool);
   const price = open.reduce((a, w) => a + w.price_cents, 0);
   $("wish-count").textContent = open.length
-    ? `per ${open.length} ${open.length === 1 ? "desiderio" : "desideri"} · ${Math.round((saved / Math.max(1, price)) * 100)}% del totale (${fmt(price)})`
-    : "";
-  $("wish-sum").hidden = !open.length;
+    ? `per ${open.length} ${open.length === 1 ? "desiderio" : "desideri"} · ${Math.round((saved / Math.max(1, price)) * 100)}% del totale (${fmt(price)})${pool ? ` · ${fmt(pool)} nel ${POOL_NAME}` : ""}`
+    : pool ? `tutti nel ${POOL_NAME}` : "";
+  $("wish-sum").hidden = !open.length && !pool;
+  renderPool(open);
   $("wish-empty").hidden = open.length > 0;
   $("wish-list").replaceChildren(...open.map(wishCard));
   const t = $("wish-closed-toggle");
   t.hidden = !closed.length;
   t.textContent = `Comprati e rinunciati (${closed.length}) ${$("wish-closed").hidden ? "›" : "⌄"}`;
   $("wish-closed").replaceChildren(...closed.map(wishCard));
+  loadLeftover();
 }
 $("wish-closed-toggle").addEventListener("click", () => {
   $("wish-closed").hidden = !$("wish-closed").hidden;
@@ -1215,8 +1230,9 @@ function wishMenu(w) {
   const actions = [];
   if (w.status === "attivo") {
     actions.push({ label: "Modifica", onClick: () => openWishSheet(w) });
+    if (w.saved_cents) actions.push({ label: "Sposta soldi", onClick: () => openWishMove(w, "move") });
     if (w.saved_cents) actions.push({ label: "Riprendi soldi", onClick: () => openWishMove(w, "out") });
-    actions.push({ label: "Rinuncio", danger: true, onClick: () => closeWish(w, "rinuncia").then(() => toast(`${w.name}: soldi di nuovo disponibili`)) });
+    actions.push({ label: "Rinuncio", danger: true, onClick: () => giveUpWish(w) });
   } else {
     actions.push({ label: "Elimina", danger: true, onClick: async () => {
       const { error } = await sb.from("wishes").delete().eq("id", w.id);
@@ -1224,7 +1240,24 @@ function wishMenu(w) {
       loadWishes();
     } });
   }
-  actionSheet({ title: w.name, message: w.status === "attivo" ? "Rinunciando, i soldi messi da parte tornano disponibili." : "", actions });
+  actionSheet({ title: w.name, message: "", actions });
+}
+
+// 0.5.1: rinunciando, i soldi messi da parte possono restare nei Desideri (Salvadanaio)
+function giveUpWish(w) {
+  if (!w.saved_cents) return closeWish(w, "rinuncia").then(() => toast(`Hai rinunciato a ${w.name}`));
+  actionSheet({
+    title: `Rinunci a ${w.name}?`,
+    message: `Hai messo da parte ${fmt(w.saved_cents)}.`,
+    actions: [
+      { label: `Sposta ${fmt(w.saved_cents)} nel ${POOL_NAME}`, onClick: async () => {
+        await setPool(wishPool() + w.saved_cents);
+        await closeWish(w, "rinuncia");
+        toast(`${fmt(w.saved_cents)} spostati nel ${POOL_NAME}`);
+      } },
+      { label: "Rendili disponibili", danger: true, onClick: () => closeWish(w, "rinuncia").then(() => toast(`${w.name}: soldi di nuovo disponibili`)) },
+    ],
+  });
 }
 
 async function closeWish(w, status, date = isoDate(new Date())) {
@@ -1304,11 +1337,18 @@ $("wish-sheet").addEventListener("submit", async (e) => {
   loadWishes();
 });
 
-// ---------- metti da parte / riprendi ----------
-function openWishMove(w, dir) {
-  state.wishMove = { w, dir };
-  $("wmove-title").textContent = w.name;
-  $("wmove-amount").value = "";
+// ---------- metti da parte / sposta / riprendi ----------
+// La fonte è un desiderio o il Salvadanaio (oggetto con pool: true).
+const poolItem = () => ({ id: "pool", pool: true, name: POOL_NAME, saved_cents: wishPool(), price_cents: null });
+const moveTargets = (src) => [
+  ...(src.pool ? [] : [poolItem()]),
+  ...(state.wishes || []).filter((w) => w.status === "attivo" && w.id !== src.id),
+];
+
+function openWishMove(src, dir, leftover = null) {
+  state.wishMove = { src, dir, leftover, dest: null };
+  $("wmove-title").textContent = src.name;
+  $("wmove-amount").value = leftover ? fmtPlain(leftover.cents) : "";
   setMsg($("wmove-msg"), "");
   renderWishMove();
   $("wmove-sheet").scrollTop = 0;
@@ -1323,42 +1363,182 @@ function closeWishMove() {
   document.activeElement?.blur();
 }
 function renderWishMove() {
-  const { w, dir } = state.wishMove;
+  const m = state.wishMove, { src, dir } = m;
+  const targets = moveTargets(src);
+  const canMove = src.saved_cents > 0 && targets.length > 0;
+  const moveBtn = document.querySelector('#wmove-dir [data-dir="move"]');
+  moveBtn.textContent = src.pool ? "Assegna" : "Sposta";
+  moveBtn.hidden = !canMove;
+  document.querySelector('#wmove-dir [data-dir="out"]').hidden = !src.saved_cents;
+  $("wmove-dir").style.gridTemplateColumns = `repeat(${[...document.querySelectorAll("#wmove-dir button")].filter((b) => !b.hidden).length}, 1fr)`;
   document.querySelectorAll("#wmove-dir button").forEach((b) => b.classList.toggle("on", b.dataset.dir === dir));
-  const left = Math.max(0, w.price_cents - w.saved_cents);
-  const plan = wishPlan(w);
-  const quick = dir === "in"
-    ? [plan && left ? [`${fmt(plan.monthly)} al mese`, Math.min(plan.monthly, left)] : null, left ? [`Tutto quello che manca (${fmt(left)})`, left] : null]
-    : [w.saved_cents ? [`Tutto (${fmt(w.saved_cents)})`, w.saved_cents] : null];
+  // destinazione (solo per Sposta / Assegna)
+  $("wmove-to").hidden = dir !== "move";
+  if (dir === "move") {
+    if (!m.dest || !targets.some((t) => t.id === m.dest.id)) m.dest = targets[0];
+    $("wmove-dest").replaceChildren(...targets.map((t) => {
+      const b = el("button", "chip" + (t.id === m.dest.id ? " on" : ""), t.pool ? `${POOL_NAME}` : t.name);
+      b.type = "button";
+      b.addEventListener("click", () => { m.dest = t; renderWishMove(); });
+      return b;
+    }));
+  }
+  const missing = (w) => (w.pool ? 0 : Math.max(0, w.price_cents - w.saved_cents));
+  const left = missing(src);
+  const plan = src.pool ? null : wishPlan(src);
+  const lo = m.leftover;
+  let quick = [];
+  if (dir === "in") quick = [
+    lo ? [`Avanzo di ${lo.mese} (${fmt(lo.cents)})`, lo.cents] : null,
+    plan && left ? [`${fmt(plan.monthly)} al mese`, Math.min(plan.monthly, left)] : null,
+    left ? [`Tutto quello che manca (${fmt(left)})`, left] : null];
+  else if (dir === "out") quick = [src.saved_cents ? [`Tutto (${fmt(src.saved_cents)})`, src.saved_cents] : null];
+  else if (m.dest) quick = [
+    !m.dest.pool && missing(m.dest) && missing(m.dest) < src.saved_cents ? [`Quanto manca a ${m.dest.name} (${fmt(missing(m.dest))})`, missing(m.dest)] : null,
+    [`Tutto (${fmt(src.saved_cents)})`, src.saved_cents]];
   $("wmove-quick").replaceChildren(...quick.filter(Boolean).map(([label, cents]) => {
     const b = el("button", "chip", label);
     b.type = "button";
     b.addEventListener("click", () => { $("wmove-amount").value = fmtPlain(cents); });
     return b;
   }));
+  const ora = src.pool ? `Ora nel ${POOL_NAME} ${fmt(src.saved_cents)}.` : `Ora ${fmt(src.saved_cents)} di ${fmt(src.price_cents)}.`;
   $("wmove-note").textContent = dir === "in"
-    ? `Ora ${fmt(w.saved_cents)} di ${fmt(w.price_cents)}. I soldi restano sul conto: scendono solo dal Disponibile.`
-    : `Messi da parte ${fmt(w.saved_cents)}. Ripresi, tornano nel Disponibile.`;
+    ? `${ora} I soldi restano sul conto: scendono solo dal Disponibile.`
+    : dir === "out"
+      ? `${src.pool ? `Nel ${POOL_NAME}` : "Messi da parte"} ${fmt(src.saved_cents)}. Ripresi, tornano nel Disponibile.`
+      : `Da ${src.name} (${fmt(src.saved_cents)}) a ${m.dest?.name || ""}. Il Disponibile non cambia.`;
 }
 document.querySelectorAll("#wmove-dir button").forEach((b) => b.addEventListener("click", () => {
   state.wishMove.dir = b.dataset.dir; renderWishMove();
 }));
+$("wmove-amount").addEventListener("input", () => setMsg($("wmove-msg"), ""));
 $("wmove-cancel").addEventListener("click", closeWishMove);
 $("wmove-backdrop").addEventListener("click", closeWishMove);
+
+// aggiunge (o toglie, con cents negativi) soldi a un desiderio o al Salvadanaio
+async function addSaved(item, cents) {
+  if (item.pool) { await setPool(wishPool() + cents); return null; }
+  const cur = (state.wishes || []).find((w) => w.id === item.id)?.saved_cents ?? item.saved_cents;
+  const { error } = await sb.from("wishes").update({ saved_cents: Math.max(0, cur + cents) }).eq("id", item.id);
+  if (!error) { const w = (state.wishes || []).find((x) => x.id === item.id); if (w) w.saved_cents = Math.max(0, cur + cents); }
+  return error;
+}
+
 $("wmove-sheet").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const { w, dir } = state.wishMove;
+  const { src, dir, dest, leftover } = state.wishMove;
   const cents = parseAmount($("wmove-amount").value);
   const msg = $("wmove-msg");
   if (cents === null) { setMsg(msg, "Inserisci un importo, es. 50.", true); return $("wmove-amount").focus(); }
-  if (dir === "out" && cents > w.saved_cents) { setMsg(msg, `Puoi riprendere al massimo ${fmt(w.saved_cents)}.`, true); return; }
-  const saved = w.saved_cents + (dir === "in" ? cents : -cents);
-  const { error } = await sb.from("wishes").update({ saved_cents: saved }).eq("id", w.id);
+  if (dir !== "in" && cents > src.saved_cents) {
+    setMsg(msg, `${dir === "out" ? "Puoi riprendere" : "Puoi spostare"} al massimo ${fmt(src.saved_cents)}.`, true); return;
+  }
+  let error = null;
+  if (dir === "move") {
+    error = await addSaved(dest, cents);
+    if (!error) {
+      error = await addSaved(src, -cents);
+      if (error) await addSaved(dest, -cents); // non riuscito: rimette com'era
+    }
+  } else error = await addSaved(src, dir === "in" ? cents : -cents);
   if (error) return setMsg(msg, "Errore: " + traduciErrore(error.message), true);
   closeWishMove();
-  toast(dir === "in" ? `${fmt(cents)} messi da parte per ${w.name}` : `${fmt(cents)} tornati disponibili`);
+  if (dir === "in" && leftover) leftoverDone(leftover.key); // IMPR-002
+  toast(dir === "in" ? `${fmt(cents)} messi da parte ${src.pool ? `nel ${POOL_NAME}` : `per ${src.name}`}`
+    : dir === "out" ? `${fmt(cents)} tornati disponibili`
+    : `${fmt(cents)} spostati ${dest.pool ? `nel ${POOL_NAME}` : `su ${dest.name}`}`);
   loadWishes();
 });
+
+// ---------- 0.5.1: Salvadanaio ----------
+function renderPool(open) {
+  const pool = wishPool();
+  $("pool-total").textContent = fmt(pool);
+  $("pool-sub").textContent = pool
+    ? "Soldi per i Desideri non ancora assegnati a un desiderio"
+    : "Metti da parte per i Desideri senza sceglierne uno: lo assegni dopo";
+  $("pool-assign").hidden = !pool || !open.length;
+}
+$("pool-put").addEventListener("click", () => openWishMove(poolItem(), "in"));
+$("pool-assign").addEventListener("click", () => openWishMove(poolItem(), "move"));
+$("pool-head").addEventListener("click", () => {
+  const p = poolItem();
+  if (!p.saved_cents) return;
+  actionSheet({ title: POOL_NAME, message: `Dentro ci sono ${fmt(p.saved_cents)}.`, actions: [
+    ...(moveTargets(p).length ? [{ label: "Assegna a un desiderio", onClick: () => openWishMove(p, "move") }] : []),
+    { label: "Riprendi soldi", onClick: () => openWishMove(p, "out") },
+  ] });
+});
+
+// ---------- IMPR-002 (0.5.1): avanzo del mese, nei Desideri e nella Dashboard ----------
+// Nel mese nuovo, se nel mese prima hai speso meno del budget, propone di mettere
+// da parte quello che è avanzato. Si propone una volta per mese (fatto o "Non ora").
+const leftoverSeen = () => { try { return localStorage.getItem("flunora.leftoverDone") || ""; } catch { return ""; } };
+function leftoverDone(key) {
+  try { localStorage.setItem("flunora.leftoverDone", key); } catch {}
+  $("wish-left").hidden = true;
+  $("left-banner").hidden = true;
+}
+
+async function computeLeftover() {
+  const prev = addMonths(firstOfMonth(new Date()), -1);
+  const key = monthKey(prev);
+  if (!wishesOn() || leftoverSeen() >= key) return null;
+  const [bRes, tRes] = await Promise.all([
+    sb.from("budgets").select("amount_cents").eq("month", isoDate(prev)).maybeSingle(),
+    sb.from("transactions").select("amount_cents").eq("kind", "uscita")
+      .gte("date", isoDate(prev)).lt("date", isoDate(addMonths(prev, 1))),
+  ]);
+  const budget = (bRes.error ? null : bRes.data?.amount_cents) ?? defaultBudget();
+  if (tRes.error || !budget) return null;
+  const spent = tRes.data.reduce((a, t) => a + t.amount_cents, 0);
+  const left = budget - spent;
+  if (!spent || left < 100) return null; // mese vuoto o niente avanzo
+  return state.leftover = { key, mese: MESI[prev.getMonth()], cents: left, spent, budget };
+}
+
+async function loadLeftover() {
+  const lo = await computeLeftover();
+  $("wish-left").hidden = !lo;
+  if (!lo) return;
+  $("wish-left-title").textContent = `Del budget di ${lo.mese} ti sono avanzati ${fmt(lo.cents)}`;
+  $("wish-left-sub").textContent = `Hai speso ${fmt(lo.spent)} su ${fmt(lo.budget)}. Vuoi metterli da parte per i Desideri?`;
+  if (state.leftoverGo) { state.leftoverGo = false; chooseLeftoverTarget(); }
+}
+
+// dove mettere l'avanzo: nel Salvadanaio o in un desiderio a cui mancano soldi
+function chooseLeftoverTarget() {
+  const lo = state.leftover;
+  if (!lo) return;
+  const go = (w) => openWishMove(w, "in", { key: lo.key, mese: lo.mese, cents: w.pool ? lo.cents : Math.min(lo.cents, w.price_cents - w.saved_cents) });
+  const wishes = (state.wishes || []).filter((w) => w.status === "attivo" && w.price_cents > w.saved_cents);
+  actionSheet({
+    title: "Dove lo metti?",
+    message: `Avanzo di ${lo.mese}: ${fmt(lo.cents)}`,
+    actions: [
+      { label: `${POOL_NAME} · lo assegni dopo`, onClick: () => go(poolItem()) },
+      ...wishes.map((w) => ({ label: `${w.name} · mancano ${fmt(w.price_cents - w.saved_cents)}`, onClick: () => go(w) })),
+    ],
+  });
+}
+$("wish-left-put").addEventListener("click", chooseLeftoverTarget);
+const skipLeftover = () => {
+  leftoverDone(state.leftover?.key || monthKey(addMonths(firstOfMonth(new Date()), -1)));
+  toast("Va bene: te lo ripropongo il mese prossimo");
+};
+$("wish-left-skip").addEventListener("click", skipLeftover);
+
+// avviso nella Dashboard: porta ai Desideri e apre la scelta
+async function renderLeftoverBanner() {
+  const lo = await computeLeftover();
+  $("left-banner").hidden = !lo;
+  if (lo) $("left-banner-title").textContent = `Del budget di ${lo.mese} ti sono avanzati ${fmt(lo.cents)}`;
+}
+const goLeftover = () => { state.leftoverGo = true; location.hash = "#desideri"; };
+$("left-banner-open").addEventListener("click", goLeftover);
+$("left-banner-go").addEventListener("click", goLeftover);
+$("left-banner-close").addEventListener("click", skipLeftover);
 
 // =========================================================
 // 0.4.5 — ANTICIPI
@@ -1656,6 +1836,23 @@ $("sheet").addEventListener("submit", async (e) => {
   }
 });
 
+// IMPR-003 (0.5.1): Duplica — il pannello diventa un movimento nuovo già compilato, con la data di oggi
+$("sheet-dup").addEventListener("click", () => {
+  const tx = state.editing;
+  if (!tx) return;
+  openSheet(null);
+  state.dupOf = tx.id;
+  state.categoryId = tx.category_id;
+  setKind(tx.kind);
+  $("f-amount").value = fmtPlain(tx.amount_cents);
+  $("f-desc").value = tx.description || "";
+  $("f-date").value = isoDate(new Date());
+  $("sheet-title").textContent = "Duplica movimento";
+  $("freq-box").hidden = true;
+  $("kind-anticipo").hidden = true;
+  setMsg($("sheet-msg"), "È una copia con la data di oggi: controlla e salva.");
+});
+
 $("sheet-delete").addEventListener("click", async () => {
   const tx = state.editing;
   if (!tx) return;
@@ -1875,6 +2072,7 @@ function openSettings() {
   $("set-opening").textContent = openingLabel();
   $("set-backup").textContent = lastBackupText();
   renderFreqReset();
+  renderLock();
   $("settings").scrollTop = 0;
   $("settings").classList.add("open");
   $("settings").setAttribute("aria-hidden", "false");
@@ -2939,7 +3137,7 @@ async function buildBackup() {
         name: w.name, price_cents: w.price_cents, saved_cents: w.saved_cents, due_date: w.due_date, link: w.link,
         note: w.note, sort_order: w.sort_order, status: w.status, closed_on: w.closed_on,
       })),
-      settings: { sections: sections || state.sections, budget_cents, opening, backup_reminder_days },
+      settings: { sections: sections || state.sections, budget_cents, opening, backup_reminder_days, wish_pool_cents: state.settingsData.wish_pool_cents || 0 },
     },
   };
 }
@@ -3276,7 +3474,7 @@ async function runRestore() {
     if (r.mode === "replace") {
       state.settingsData = { ...bs, ...keep };
     } else {
-      for (const k of ["budget_cents", "opening", "backup_reminder_days"]) {
+      for (const k of ["budget_cents", "opening", "backup_reminder_days", "wish_pool_cents"]) {
         if (state.settingsData[k] == null && bs[k] != null) state.settingsData[k] = bs[k];
       }
     }
@@ -3455,6 +3653,94 @@ document.querySelectorAll(".sheet").forEach(attachSheetDrag);
 // niente zoom con due dita (Safari) — resta lo Zoom di sistema in Accessibilità
 document.addEventListener("gesturestart", (e) => e.preventDefault(), { passive: false });
 document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
+
+// =========================================================
+// IMPR-004 (0.5.1) — BLOCCO CON FACE ID
+// Una passkey dell'iPhone (WebAuthn) fa da chiave: Flunora chiede Face ID all'apertura
+// e quando torni dopo più di LOCK_AFTER_MS. È un blocco dello schermo su questo
+// dispositivo: i dati restano protetti come prima dall'accesso a Supabase.
+// =========================================================
+const LOCK_KEY = "flunora.lock", LOCK_AFTER_MS = 60 * 1000;
+function lockCfg() { try { return JSON.parse(localStorage.getItem(LOCK_KEY) || "null"); } catch { return null; } }
+function lockOff() { try { localStorage.removeItem(LOCK_KEY); } catch {} hideLock(); }
+const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const fromB64 = (str) => Uint8Array.from(atob(str), (c) => c.charCodeAt(0));
+const randomBytes = (n) => crypto.getRandomValues(new Uint8Array(n));
+
+async function lockSupported() {
+  try { return !!window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); }
+  catch { return false; }
+}
+
+async function renderLock() {
+  const t = $("lock-toggle");
+  t.checked = !!lockCfg();
+  const ok = await lockSupported();
+  t.disabled = !ok && !t.checked;
+  $("lock-foot").textContent = ok || t.checked
+    ? "Flunora chiede Face ID quando la apri e quando ci torni dopo più di un minuto. Vale solo per questo iPhone."
+    : "Su questo dispositivo Face ID non è disponibile per Flunora.";
+}
+
+$("lock-toggle").addEventListener("change", async (e) => {
+  const t = e.target;
+  if (!t.checked) { lockOff(); toast("Blocco con Face ID disattivato"); return; }
+  t.checked = false;
+  try {
+    const cred = await navigator.credentials.create({ publicKey: {
+      rp: { name: "Flunora", id: location.hostname },
+      user: { id: randomBytes(16), name: state.user?.email || "Flunora", displayName: "Flunora" },
+      challenge: randomBytes(32),
+      pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+      authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },
+      timeout: 60000,
+    } });
+    localStorage.setItem(LOCK_KEY, JSON.stringify({ id: toB64(cred.rawId), on: new Date().toISOString() }));
+    t.checked = true;
+    toast("Blocco con Face ID attivo");
+  } catch (err) {
+    toast(err?.name === "NotAllowedError" ? "Face ID annullato: blocco non attivato" : "Face ID non disponibile: " + (err?.message || err));
+  }
+});
+
+let lockBusy = false;
+function showLock() {
+  $("lock").hidden = false;
+  document.body.classList.add("is-locked");
+  setMsg($("lock-msg"), "");
+  unlock();
+}
+function hideLock() {
+  $("lock").hidden = true;
+  document.body.classList.remove("is-locked");
+}
+async function unlock() {
+  const cfg = lockCfg();
+  if (!cfg) return hideLock();
+  if (lockBusy) return;
+  lockBusy = true;
+  try {
+    await navigator.credentials.get({ publicKey: {
+      challenge: randomBytes(32),
+      rpId: location.hostname,
+      allowCredentials: [{ type: "public-key", id: fromB64(cfg.id) }],
+      userVerification: "required",
+      timeout: 60000,
+    } });
+    hideLock();
+  } catch (err) {
+    // la prima richiesta automatica può non partire senza un tocco: resta il pulsante
+    setMsg($("lock-msg"), err?.name === "NotAllowedError" ? "" : "Face ID non riuscito. Riprova.", true);
+  } finally { lockBusy = false; }
+}
+$("lock-open").addEventListener("click", unlock);
+$("lock-out").addEventListener("click", async () => { lockOff(); await sb.auth.signOut(); });
+
+let hiddenAt = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (state.user && lockCfg() && hiddenAt && Date.now() - hiddenAt > LOCK_AFTER_MS) showLock();
+});
 
 init();
 

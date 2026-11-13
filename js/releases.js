@@ -5,6 +5,16 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.5.1", date: "13 novembre 2026",
+    items: [
+      "Nuovo: \"Duplica\" nel pannello di un movimento: apre una copia già compilata con la data di oggi, da controllare e salvare (IMPR-003)",
+      "Nuovo nei Desideri: il Salvadanaio, per mettere da parte soldi per i Desideri senza sceglierne uno; li assegni a un desiderio quando vuoi (IMPR-008)",
+      "Nei Desideri puoi spostare i soldi da un desiderio a un altro o nel Salvadanaio, senza toccare il Disponibile; rinunciando a un desiderio puoi tenere i soldi nel Salvadanaio (IMPR-007)",
+      "A inizio mese, se nel mese prima hai speso meno del budget, un avviso nella Dashboard e nei Desideri ti propone di mettere da parte quello che è avanzato, nel Salvadanaio o in un desiderio (IMPR-002)",
+      "Nuovo: blocco con Face ID, in Impostazioni › Sicurezza. Flunora chiede Face ID quando la apri e quando ci torni dopo più di un minuto (IMPR-004)",
+    ],
+  },
+  {
     version: "0.5.0", date: "12 novembre 2026",
     items: [
       "Nuovo: la sezione Desideri, per le cose che vuoi comprare; si attiva in Impostazioni › Sezioni",

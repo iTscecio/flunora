@@ -2,6 +2,13 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.5.1
+- IMPR-003 Duplica movimento: nel pannello "Modifica movimento" i pulsanti in fondo sono "Duplica" ed "Elimina" (`#sheet-foot`). "Duplica" trasforma il pannello in un movimento nuovo (`state.dupOf`) con tipo, categoria, importo e descrizione dell'originale e la data di oggi; niente Frequenti né Anticipo
+- IMPR-008 Salvadanaio: soldi destinati ai Desideri ma non assegnati. Sta nelle impostazioni sincronizzate (`user_settings.data.wish_pool_cents`, anche nel backup): nessuno script Supabase. Carta `#wish-pool` con "Metti da parte" e "Assegna"; toccando il titolo: Assegna, Riprendi. Conta nel totale "Messi da parte" e nei Desideri del saldo (Disponibile = conto − desideri − Salvadanaio)
+- IMPR-007 Sposta soldi: nel pannello `#wmove-sheet` terza scelta "Sposta" ("Assegna" dal Salvadanaio) con la destinazione ("Verso": Salvadanaio e gli altri desideri attivi) e le scorciatoie "Quanto manca a …" e "Tutto". Prima aggiunge alla destinazione, poi toglie dalla fonte; se la seconda scrittura non riesce, rimette com'era. "Sposta soldi" anche nel menu del desiderio. "Rinuncio" con soldi messi da parte chiede: spostarli nel Salvadanaio o renderli disponibili
+- IMPR-002 Avanzo del mese: mese precedente = budget (`budgets` del mese o budget mensile) − uscite; se le uscite sono > 0 e l'avanzo ≥ 1 € e la sezione Desideri è attiva: avviso `#left-banner` nella Dashboard (porta ai Desideri e apre la scelta) e carta `#wish-left` nei Desideri. Destinazione: Salvadanaio o un desiderio a cui mancano soldi; il pannello parte con l'avanzo (per un desiderio, al massimo quanto manca) e ha la scorciatoia "Avanzo di …". Una volta per mese: `localStorage` `flunora.leftoverDone` = "AAAA-MM"
+- IMPR-004 Blocco con Face ID: Impostazioni › Sicurezza. Attivandolo si crea una passkey dell'iPhone (WebAuthn, autenticatore della piattaforma, verifica utente obbligatoria); l'id resta in `localStorage` `flunora.lock`. Schermata `#lock` all'avvio (coperta subito, prima di leggere la sessione) e al ritorno dopo più di 60 secondi in background; "Esci e accedi con la password" toglie il blocco. È un blocco dello schermo di questo dispositivo: nessun dato nuovo su Supabase
+
 ## 0.5.0
 - Nuova sezione Desideri (non più segnaposto): riepilogo "Messi da parte", schede con prezzo, barra di avanzamento, "mancano …", "Entro mese anno: … al mese" se c'è una scadenza, nota e link; "Comprati e rinunciati (n)" a scomparsa; toccando il titolo: Modifica, Riprendi soldi, Rinuncio (o Elimina per quelli chiusi)
 - Ordine di priorità trascinando la maniglia ≡ (con almeno 2 desideri attivi; `attachSort`, salva `sort_order`)

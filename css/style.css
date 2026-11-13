@@ -1200,3 +1200,45 @@ body.scroll-locked { position: fixed; left: 0; right: 0; overflow: hidden; }
 .wish-card .adv-head h2 { flex: 1; }
 /* bug #008: il mese scelto nei Desideri con la maiuscola (anche nel campo di Safari) */
 #wish-due, #wish-due::-webkit-date-and-time-value { text-transform: capitalize; }
+
+/* =========================================================
+   0.5.1 — DUPLICA, AVANZO DEL MESE, BLOCCO CON FACE ID
+   ========================================================= */
+.sheet-foot { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sheet-foot[hidden] { display: none; }
+.btn-plain {
+  border: 0; border-radius: 14px; padding: 14px; background: var(--card);
+  color: var(--accent); font-weight: 600; cursor: pointer;
+}
+.wish-left { display: grid; gap: 12px; }
+.wish-left[hidden] { display: none; }
+.wish-left-head { display: flex; gap: 12px; align-items: flex-start; }
+.wish-left-head .ph-ico { width: 36px; height: 36px; border-radius: 10px; flex: none; margin: 0; }
+.wish-left-head .ph-ico svg { width: 22px; height: 22px; }
+.wish-left-head div { display: grid; gap: 3px; }
+.wish-left .wish-actions { margin-top: 0; }
+.lock {
+  position: fixed; inset: 0; z-index: 1000; background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+  text-align: center;
+}
+.lock[hidden] { display: none; }
+.lock-logo { width: 84px; height: 84px; border-radius: 20px; box-shadow: 0 6px 20px rgba(0, 0, 0, .15); }
+.lock h2 { margin: 6px 0 8px; font-size: 22px; }
+.lock-btn {
+  border: 0; border-radius: 14px; padding: 15px 26px; min-width: 240px;
+  background: var(--accent); color: #fff; font-size: 17px; font-weight: 600; cursor: pointer;
+}
+.lock-out { margin-top: 18px; font-size: 15px; }
+body.is-locked { overflow: hidden; }
+/* 0.5.1: Salvadanaio, Sposta, avviso avanzo nella Dashboard */
+.wmove-to[hidden] { display: none; }
+.wmove-to { display: grid; gap: 8px; margin-top: 6px; }
+.wmove-to .section-title { margin: 0; padding: 0 4px; }
+#wmove-dir button[hidden] { display: none; }
+.wish-pool h2 { display: flex; align-items: center; gap: 8px; }
+.pool-ico { width: 26px; height: 26px; border-radius: 7px; background: #ff9f0a; display: grid; place-items: center; flex: none; }
+.pool-ico svg { width: 18px; height: 18px; fill: none; stroke: #fff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.adv-btn[hidden] { display: none; }
+.left-banner .ic { background: #34c759; }
