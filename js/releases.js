@@ -5,7 +5,7 @@
 // =========================================================
 window.RELEASES = [
   {
-    version: "0.8.0", date: "14 novembre 2026",
+    version: "0.8.0", date: "13 novembre 2026",
     items: [
       "Più conti: oltre al conto corrente puoi aggiungere i Contanti e altre carte o conti, ognuno con il suo saldo iniziale. Li trovi in Impostazioni › Conti e saldo iniziale, o toccando il saldo nella Dashboard",
       "Nella Dashboard il saldo totale è la somma di tutti i conti. Puoi vedere sotto il saldo di ogni conto, oppure un conto alla volta scegliendolo in alto: si cambia in Conti › Nella Dashboard",
