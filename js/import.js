@@ -63,6 +63,7 @@ function confirmUndo(b) {
 async function undoImport(batchId) {
   const { data, error } = await sb.rpc("undo_import", { batch: batchId });
   if (error) return toast("Non riuscito: " + traduciErrore(error.message));
+  await sb.from("transfers").delete().eq("batch_id", batchId); // 0.8.0 (senza lo script non ce ne sono)
   toast(`Importazione annullata · ${data} ${data === 1 ? "movimento tolto" : "movimenti tolti"}`);
   closeImpSheet();
   renderImportHistory();
@@ -233,7 +234,7 @@ async function buildItems(res) {
   const pad = (d, n) => { const x = new Date(d + "T12:00"); x.setDate(x.getDate() + n); return isoDate(x); };
   const existing = [];
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await sb.from("transactions").select("id, date, amount_cents, kind, description, import_key, category_id, recurring_id")
+    const { data, error } = await sb.from("transactions").select("id, date, amount_cents, kind, description, import_key, category_id, recurring_id, account_id")
       .gte("date", pad(dates[0], -3)).lte("date", pad(dates.at(-1), 3)).order("date").range(from, from + 999);
     if (error) throw error;
     existing.push(...data);
@@ -263,14 +264,37 @@ async function buildItems(res) {
   const recById = new Map(recs.map((r) => [r.id, r]));
   const usedRec = new Set();
 
+  // 0.8.0: conti e trasferimenti già segnati (senza lo script 0.8.0 si va avanti come prima)
+  const accs = (state.accounts || []).filter((a) => !a.archived);
+  const cash = accs.find((a) => a.type === "contanti");
+  let xfers = [];
+  if (accs.length) {
+    const r = await sb.from("transfers").select("id, date, amount_cents, from_account, to_account, import_key")
+      .gte("date", pad(dates[0], -3)).lte("date", pad(dates.at(-1), 3));
+    if (!r.error) xfers = r.data;
+  }
+  const xferKeys = new Set(xfers.map((x) => x.import_key).filter(Boolean));
+  const usedXfer = new Set();
+
   for (const it of items) {
     if (canoni.has(it.i)) { it.status = "ign"; it.note = "Canone +/− nello stesso giorno: si annullano"; continue; }
+    // 0.8.0: prelievi e spostamenti tra i tuoi conti diventano trasferimenti
+    if (it.ignore && it.move && accs.length) {
+      const out = it.kind === "uscita";
+      if (xferKeys.has(it.key)) { it.status = "dup"; it.note = "Già importato come trasferimento"; continue; }
+      const twinX = xfers.find((x) => !usedXfer.has(x.id) && !x.import_key && x.amount_cents === it.amount
+        && daysBetween(x.date, it.date) <= 3 && (out ? x.from_account == null : x.to_account == null));
+      if (twinX) { usedXfer.add(twinX.id); it.status = "dup"; it.note = `Già segnato come trasferimento del ${shortDate(twinX.date)}`; continue; }
+      it.xferOptions = xferChoices(it);
+      if (it.move === "cash" && cash && out) { setXfer(it, cash.id); continue; }
+      if (it.xferOptions.length) { it.status = "ask"; continue; }
+    }
     if (it.ignore) { it.status = "ign"; it.note = it.reason; continue; }
     if (importedKeys.has(it.key)) { it.status = "dup"; it.note = "Già importato in precedenza"; continue; }
     // IMPR-013: addebito di un abbonamento già aggiunto da Flunora, con qualche giorno
     // di scarto o con un prezzo diverso
     {
-      const recTx = existing.filter((t) => t.recurring_id && !t.import_key && !usedManual.has(t.id) && t.kind === it.kind
+      const recTx = existing.filter((t) => t.recurring_id && !t.import_key && !t.account_id && !usedManual.has(t.id) && t.kind === it.kind
         && daysBetween(t.date, it.date) <= REC_DAYS)
         .map((t) => ({ t, rec: recById.get(t.recurring_id) }))
         .filter(({ t, rec }) => t.amount_cents === it.amount ? true : rec && recNameMatch(rec, it))
@@ -310,7 +334,7 @@ async function buildItems(res) {
       }
     }
     // inserito a mano? stesso tipo e importo, data entro 3 giorni
-    const twin = existing.find((t) => !t.import_key && !usedManual.has(t.id) && t.kind === it.kind
+    const twin = existing.find((t) => !t.import_key && !t.account_id && !usedManual.has(t.id) && t.kind === it.kind
       && t.amount_cents === it.amount && daysBetween(t.date, it.date) <= 3);
     if (twin) {
       usedManual.add(twin.id);
@@ -489,7 +513,7 @@ function setFoot(label, note, onClick, disabled = false) {
 // ---------- 3. revisione ----------
 const TABS = [["all", "Tutti"], ["ask", "Dubbi"], ["new", "Nuovi"], ["ign", "Ignorati"]];
 const inTab = (it, tab) => tab === "all" || (tab === "ign" ? it.status === "ign" || it.status === "dup"
-  : tab === "new" ? it.status === "new" || it.status === "adv" || it.status === "rec" : it.status === tab);
+  : tab === "new" ? it.status === "new" || it.status === "adv" || it.status === "rec" || it.status === "xfer" : it.status === tab);
 
 function renderReview() {
   $("imp-title").textContent = "Rivedi";
@@ -516,13 +540,14 @@ function renderReview() {
   }
   if (body.length === 2) body.push(el("p", "secondary imp-empty", "Nessun movimento qui."));
   $("imp-body").replaceChildren(...body);
-  const n = countBy("new"), ask = countBy("ask"), back = countBy("adv"), fix = countBy("rec");
+  const n = countBy("new"), ask = countBy("ask"), back = countBy("adv"), fix = countBy("rec"), nx = countBy("xfer");
   const notes = [];
+  if (nx) notes.push(`${nx === 1 ? "1 trasferimento tra i tuoi conti" : `${nx} trasferimenti tra i tuoi conti`}: non contano come spese`);
   if (fix) notes.push(`${fix === 1 ? "1 addebito di un abbonamento viene corretto" : `${fix} addebiti di abbonamenti vengono corretti`} con l'importo dell'estratto conto`);
   if (back) notes.push(`${back === 1 ? "1 restituzione chiude la sua quota" : `${back} restituzioni chiudono le loro quote`} negli Anticipi`);
   if (ask) notes.push(`${ask === 1 ? "Il movimento da confermare resta fuori" : `I ${ask} da confermare restano fuori`} finché non scegli la categoria`);
-  setFoot(n ? `Importa ${n} ${n === 1 ? "movimento" : "movimenti"}` : back || fix ? "Conferma" : "Nessun movimento da importare",
-    notes.join(". "), doImport, n + back + fix === 0);
+  setFoot(n ? `Importa ${n} ${n === 1 ? "movimento" : "movimenti"}` : back || fix || nx ? "Conferma" : "Nessun movimento da importare",
+    notes.join(". "), doImport, n + back + fix + nx === 0);
 }
 
 function catLabel(id) {
@@ -536,7 +561,13 @@ function itemRow(it) {
   t.append(el("b", null, it.title),
     el("small", null, [shortDate(it.date), it.via, it.kind === "entrata" ? "entrata" : ""].filter(Boolean).join(" · ")));
   const chip = el("span", "imp-chip");
-  if (it.status === "rec") {
+  if (it.status === "xfer") { // 0.8.0
+    chip.classList.add("xfer");
+    chip.textContent = `Trasferimento ${accName(it.xfer.from)} → ${accName(it.xfer.to)}`;
+  } else if (it.status === "ask" && it.xferOptions?.length) {
+    chip.classList.add("ask");
+    chip.textContent = it.kind === "uscita" ? "Verso un tuo conto? ›" : "Da un tuo conto? ›";
+  } else if (it.status === "rec") {
     // IMPR-013: abbonamento già in Flunora con un altro importo
     chip.classList.add("rec");
     chip.append(document.createTextNode(`${it.recFix.name} · era ${fmt(it.recFix.tx.amount_cents)}`));
@@ -593,7 +624,31 @@ function pickRec(it) {
   actionSheet({ title: `${f ? f.name : rec.description} · ${(it.kind === "entrata" ? "+ " : "− ") + fmt(it.amount)}`, message: msg, actions });
 }
 
+// 0.8.0: conti verso cui (o da cui) può andare un prelievo o uno spostamento
+function xferChoices(it) {
+  const accs = (state.accounts || []).filter((a) => !a.archived);
+  if (!it.move || !accs.length) return [];
+  return it.move === "cash" ? accs.filter((a) => a.type === "contanti").concat(accs.filter((a) => a.type !== "contanti")) : accs.filter((a) => a.type !== "contanti").concat(accs.filter((a) => a.type === "contanti"));
+}
+function setXfer(it, accId) {
+  const out = it.kind === "uscita";
+  it.status = "xfer"; it.categoryId = null; it.suggest = null; it.remember = false;
+  it.xfer = out ? { from: null, to: accId } : { from: accId, to: null };
+}
+function pickXfer(it) {
+  const out = it.kind === "uscita";
+  const actions = (it.xferOptions || []).filter((a) => !(it.status === "xfer" && (out ? it.xfer.to : it.xfer.from) === a.id))
+    .map((a) => ({ label: `Trasferimento ${out ? "verso" : "da"} ${a.name}`, onClick: () => { setXfer(it, a.id); renderReview(); } }));
+  actions.push({ label: "Non contarlo", danger: true, onClick: () => { delete it.xfer; it.status = "ign"; it.note = it.reason || "Escluso da te"; renderReview(); } });
+  actionSheet({
+    title: `${it.title} · ${(out ? "− " : "+ ") + fmt(it.amount)}`,
+    message: "Uno spostamento tra i tuoi conti non è né una spesa né un'entrata: cambia solo i saldi dei conti.",
+    actions,
+  });
+}
+
 function pickCategory(it) {
+  if (it.xferOptions?.length && (it.status === "xfer" || it.status === "ask" || it.status === "ign")) return pickXfer(it); // 0.8.0
   if (it.recFix || (it.recLink && it.status === "new")) return pickRec(it);
   const cats = state.categories.filter((c) => c.kind === it.kind && !c.archived);
   const actions = [];
@@ -640,7 +695,7 @@ function setItemCat(it, catId) {
 }
 
 function skipItem(it) {
-  delete it.recFix; delete it.recLink;
+  delete it.recFix; delete it.recLink; delete it.xfer;
   it.status = "ign"; it.note = "Escluso da te"; it.categoryId = null; it.remember = false;
   renderReview();
 }
@@ -650,7 +705,8 @@ async function doImport() {
   const chosen = imp.items.filter((it) => it.status === "new");
   const backs = imp.items.filter((it) => it.status === "adv"); // 0.4.6
   const fixes = imp.items.filter((it) => it.status === "rec" && it.recFix); // IMPR-013
-  if ((!chosen.length && !backs.length && !fixes.length) || imp.busy) return;
+  const moves = imp.items.filter((it) => it.status === "xfer"); // 0.8.0
+  if ((!chosen.length && !backs.length && !fixes.length && !moves.length) || imp.busy) return;
   imp.busy = true;
   $("imp-go").disabled = true;
   impLoading("Salvo una copia dei tuoi dati e importo…");
@@ -690,6 +746,14 @@ async function doImport() {
       if (r.error) throw r.error;
       data = r.data;
     }
+    // 0.8.0: trasferimenti tra i conti (si annullano con l'importazione)
+    if (moves.length) {
+      const { error } = await sb.from("transfers").upsert(moves.map((it) => ({
+        user_id: state.user.id, date: it.date, amount_cents: it.amount, from_account: it.xfer.from, to_account: it.xfer.to,
+        description: it.title, import_key: it.key, batch_id: data.batch_id,
+      })), { onConflict: "user_id,import_key", ignoreDuplicates: true });
+      if (error) throw error;
+    }
     // 0.4.6: quote restituite sul conto, con la data dell'estratto conto
     for (const it of backs) {
       const { error } = await sb.from("advance_shares").update({ status: "conto", closed_on: it.date })
@@ -717,7 +781,7 @@ async function doImport() {
     }
     for (const [id, cents] of prices) await sb.from("recurring").update({ amount_cents: cents }).eq("id", id);
     imp.batch = data;
-    renderDone(chosen, data, rules.size, backs.length, { linked: linked.length, fixed: fixes.length, prices: prices.size });
+    renderDone(chosen, data, rules.size, backs.length, { linked: linked.length, fixed: fixes.length, prices: prices.size, moves: moves.length });
     renderImportHistory();
     refreshPagesAfterImport();
   } catch (err) {
@@ -739,7 +803,8 @@ function renderDone(chosen, result, nRules, nBacks = 0, recs = { linked: 0, fixe
   const sum = el("ul", "card list settings");
   const kv = (a, b) => { const li = el("li", "imp-kv"); li.append(el("span", "label", a), el("b", null, String(b))); return li; };
   sum.append(kv("Entrate", chosen.filter((it) => it.kind === "entrata").length), kv("Uscite", chosen.filter((it) => it.kind === "uscita").length),
-    kv("Non importati", imp.items.length - chosen.length - nBacks - recs.fixed));
+    kv("Non importati", imp.items.length - chosen.length - nBacks - recs.fixed - (recs.moves || 0)));
+  if (recs.moves) sum.append(kv("Trasferimenti tra i tuoi conti", recs.moves)); // 0.8.0
   if (recs.linked) sum.append(kv("Collegati agli abbonamenti", recs.linked));
   if (recs.fixed) sum.append(kv("Addebiti di abbonamenti corretti", recs.fixed));
   if (recs.prices) sum.append(kv("Prezzi di abbonamenti aggiornati", recs.prices));

@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611131817">
+  <link rel="stylesheet" href="css/style.css?v=202611132340">
 </head>
 <body>
 
@@ -83,9 +83,13 @@
       </div>
 
       <!-- saldo totale (0.2.4) -->
-      <div class="saldo-wrap">
+      <div class="saldo-wrap" id="saldo-wrap">
+        <!-- 0.8.0 (bozza B): un conto alla volta -->
+        <div class="chips acc-pick" id="acc-pick" hidden></div>
         <button type="button" id="saldo-card" class="card saldo" aria-label="Saldo totale"></button>
         <button type="button" id="saldo-eye" class="saldo-eye" hidden></button>
+        <!-- 0.8.0 (bozza A): totale e un saldo per ogni conto -->
+        <div class="acc-strip" id="acc-strip" hidden></div>
       </div>
 
       <!-- 0.6.0: recap del mese passato e periodici in arrivo -->
@@ -328,7 +332,7 @@
           <li class="tap" id="open-budget"><span class="ico" style="--c:#007aff"><svg viewBox="0 0 24 24"><path d="M4 7h16v12H4zM4 11h16M16 15h.01"/></svg></span>
             <span class="label">Budget mensile</span><span id="set-budget" class="value"></span><span class="chev">&rsaquo;</span></li>
           <li class="tap" id="open-opening"><span class="ico" style="--c:#34c759"><svg viewBox="0 0 24 24"><path d="M2 6h20v12H2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg></span>
-            <span class="label">Saldo iniziale</span><span id="set-opening" class="value"></span><span class="chev">&rsaquo;</span></li>
+            <span class="label" id="set-opening-lbl">Conti e saldo iniziale</span><span id="set-opening" class="value"></span><span class="chev">&rsaquo;</span></li>
           <li class="tap" id="open-categories"><span class="ico" style="--c:#ff9500"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span>
             <span class="label">Categorie</span><span class="chev">&rsaquo;</span></li>
           <li class="tap" id="open-backup"><span class="ico" style="--c:#34c759"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span>
@@ -450,6 +454,7 @@
       <div class="group">
         <label class="group-row"><span>Data</span><input type="date" id="f-date"></label>
         <label class="group-row"><span>Descrizione</span><input id="f-desc" placeholder="Facoltativa" maxlength="120" autocomplete="off"></label>
+        <label class="group-row" id="acc-row" hidden><span>Conto</span><select id="f-account"></select></label>
         <label class="group-row" id="rep-row"><span>Ripeti</span>
           <select id="f-repeat"><option value="">Mai</option><option value="mese">Ogni mese</option><option value="anno">Ogni anno</option></select></label>
         <label class="group-row" id="sub-row" hidden><span>Tipo</span>
@@ -865,6 +870,77 @@
       <p id="wauto-msg" class="msg" role="status"></p>
     </form>
 
+    <!-- ---------- 0.8.0: CONTI ---------- -->
+    <div id="acc-backdrop" class="sheet-backdrop top"></div>
+    <section id="acc-sheet" class="sheet top" aria-hidden="true">
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <span></span>
+        <h2>Conti</h2>
+        <button type="button" id="acc-close" class="link-btn strong">Fine</button>
+      </div>
+      <ul class="card list settings acc-list" id="acc-list"></ul>
+      <ul class="card list settings acc-actions">
+        <li class="tap" id="acc-new"><span class="ico" style="--c:#007aff"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span class="label">Nuovo conto</span><span class="chev">&rsaquo;</span></li>
+        <li class="tap" id="acc-xfer"><span class="ico" style="--c:#5856d6"><svg viewBox="0 0 24 24"><path d="M4 8h14l-3-3M20 16H6l3 3"/></svg></span><span class="label">Sposta soldi tra conti</span><span class="chev">&rsaquo;</span></li>
+      </ul>
+      <h3 class="section-title" id="acc-view-title">Nella Dashboard</h3>
+      <div class="segmented acc-view" id="acc-view"><button type="button" data-v="totale">Totale e conti</button><button type="button" data-v="conto">Un conto alla volta</button></div>
+      <p class="secondary small foot" id="acc-note">Ogni movimento ha il suo conto: di base il conto corrente, quello dell'estratto conto. I prelievi al bancomat e gli spostamenti tra i tuoi conti sono trasferimenti: non sono né spese né entrate.</p>
+    </section>
+
+    <!-- ---------- 0.8.0: UN CONTO (nuovo o da modificare) ---------- -->
+    <div id="accedit-backdrop" class="sheet-backdrop top"></div>
+    <form id="accedit-sheet" class="sheet top" aria-hidden="true" novalidate>
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <button type="button" id="accedit-cancel" class="link-btn">Annulla</button>
+        <h2 id="accedit-title">Nuovo conto</h2>
+        <button type="submit" id="accedit-save" class="link-btn strong">Salva</button>
+      </div>
+      <div class="chips acc-types" id="accedit-types">
+        <button type="button" class="chip" data-t="contanti">Contanti</button>
+        <button type="button" class="chip" data-t="altro">Carta o altro conto</button>
+      </div>
+      <div class="group">
+        <label class="group-row"><span>Nome</span><input id="accedit-name" maxlength="40" placeholder="Es. Contanti" autocomplete="off"></label>
+        <label class="group-row"><span>Saldo iniziale</span><input id="accedit-amount" inputmode="decimal" placeholder="0,00 €" autocomplete="off"></label>
+        <label class="group-row"><span>Al</span><input type="date" id="accedit-date"></label>
+      </div>
+      <p id="accedit-note" class="secondary small foot">Quanto c'era sul conto alla fine di quel giorno: da lì Flunora aggiunge movimenti e trasferimenti.</p>
+      <p id="accedit-msg" class="msg" role="status"></p>
+      <div class="sheet-foot" id="accedit-foot" hidden>
+        <button type="button" id="accedit-archive" class="btn-plain">Archivia</button>
+        <button type="button" id="accedit-del" class="btn-danger">Elimina</button>
+      </div>
+    </form>
+
+    <!-- ---------- 0.8.0: TRASFERIMENTO ---------- -->
+    <div id="xfer-backdrop" class="sheet-backdrop top"></div>
+    <form id="xfer-sheet" class="sheet top" aria-hidden="true" novalidate>
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <button type="button" id="xfer-cancel" class="link-btn">Annulla</button>
+        <h2 id="xfer-title">Trasferimento</h2>
+        <button type="submit" id="xfer-save" class="link-btn strong">Salva</button>
+      </div>
+      <label class="amount">
+        <span>€</span>
+        <input id="xfer-amount" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Importo">
+      </label>
+      <p class="adv-hint">Non è né una spesa né un'entrata: cambia solo i saldi dei due conti</p>
+      <div class="group">
+        <label class="group-row"><span>Da</span><select id="xfer-from"></select></label>
+        <label class="group-row"><span>A</span><select id="xfer-to"></select></label>
+        <label class="group-row"><span>Data</span><input type="date" id="xfer-date"></label>
+        <label class="group-row"><span>Nota</span><input id="xfer-desc" placeholder="Facoltativa, es. Prelievo" maxlength="80" autocomplete="off"></label>
+      </div>
+      <p id="xfer-msg" class="msg" role="status"></p>
+      <div class="sheet-foot" id="xfer-foot" hidden>
+        <button type="button" id="xfer-del" class="btn-danger">Elimina</button>
+      </div>
+    </form>
+
     <!-- ---------- 0.7.0: LA TUA AUTO (nome, targa, categorie) ---------- -->
     <div id="car-backdrop" class="sheet-backdrop top"></div>
     <form id="car-sheet" class="sheet top" aria-hidden="true" novalidate>
@@ -955,11 +1031,11 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611131817"></script>
-  <script src="js/releases.js?v=202611131817"></script>
-  <script src="js/icons.js?v=202611131817"></script>
-  <script src="js/app.js?v=202611131817"></script>
-  <script src="js/bank-bdp.js?v=202611131817"></script>
-  <script src="js/import.js?v=202611131817"></script>
+  <script src="js/config.js?v=202611132340"></script>
+  <script src="js/releases.js?v=202611132340"></script>
+  <script src="js/icons.js?v=202611132340"></script>
+  <script src="js/app.js?v=202611132340"></script>
+  <script src="js/bank-bdp.js?v=202611132340"></script>
+  <script src="js/import.js?v=202611132340"></script>
 </body>
 </html>

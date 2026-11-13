@@ -37,6 +37,8 @@ window.CATEGORY_ICONS = {
   // soldi e servizi
   briefcase: { label: "Lavoro",       d: "M3 8h18v12H3zM8 8V5h8v3M3 13h18" },
   banknote:  { label: "Contanti",     d: "M2 6h20v12H2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 9v.01M18 15v.01" },
+  card:      { label: "Carta",        d: "M3 6h18v12H3zM3 10h18M7 15h4" },
+  bank:      { label: "Banca",        d: "M3 10l9-6 9 6M5 10v8M19 10v8M9 10v8M15 10v8M3 20h18" },
   euro:      { label: "Euro",         d: "M17 7.5A6 6 0 1 0 17 16.5M5 10.5h8M5 13.5h8" },
   trend:     { label: "Investimenti", d: "M3 17l6-6 4 4 8-8M15 7h6v6" },
   chart:     { label: "Grafico",      d: "M4 20V10M10 20V4M16 20v-7M3 20h18" },

@@ -2,6 +2,16 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.8.0
+- Conti: il conto corrente resta quello di sempre (movimenti con `account_id` vuoto, saldo iniziale in `settings.opening`, nome in `settings.main_name`); gli altri conti stanno nella tabella `accounts` (tipo `contanti` o `altro`, saldo iniziale e data, archiviabili; eliminabili solo senza movimenti né trasferimenti)
+- Saldi (`computeAccounts`): conto corrente = saldo calcolato come prima − movimenti degli altri conti dopo la sua data ± trasferimenti; ogni altro conto = saldo iniziale + i suoi movimenti + trasferimenti dopo la sua data; i Contanti prendono anche le quote degli anticipi restituite in contanti. Il saldo totale è la somma
+- Dashboard: `settings.acc_view` "totale" (bozza A: un saldo per conto sotto la carta e "Sposta soldi tra conti") o "conto" (bozza B: scelta del conto in alto, salvata sul dispositivo); con un solo conto tutto come prima. L'occhio nasconde anche i saldi dei conti. Con più conti la carta apre il pannello Conti
+- Pannello +: riga Conto (`#acc-row`) solo con più conti, non per anticipi e periodici; il conto scelto si ricorda per categoria sul dispositivo (`flunora.accByCat`). Mesi: nome del conto nella riga del movimento
+- Trasferimenti (tabella `transfers`, conto vuoto = conto corrente): pannello "Sposta soldi", riga in Mesi tra i movimenti del giorno (non contano nei totali né nel giorno; nascosti con il filtro per categoria), modificabili ed eliminabili
+- Import: i movimenti già presenti si cercano solo nel conto corrente; prelievi (`move: "cash"`) → trasferimento verso Contanti; giroconti e bonifici a te stesso (`move: "own"`) → tra i Dubbi, "Verso un tuo conto?" con la scelta del conto o "Non contarlo"; trasferimento già segnato a mano (stesso importo, entro 3 giorni) o già importato → doppione. I trasferimenti importati hanno `import_key` e `batch_id`: si tolgono annullando l'importazione
+- Icone nuove: `card`, `bank`
+- Supabase (`0.8.0_conti.sql`): tabelle `accounts` e `transfers` con RLS, `transactions.account_id`; `restore_backup` ripristina conti (ritrovati per nome), conto dei movimenti e trasferimenti
+
 ## 0.7.0
 - Sezione Auto (non più segnaposto; `SECTIONS.auto` senza `placeholder`). Una sola auto: nome, targa, categorie (`cats`), categoria dei rifornimenti (`fuel`), letture manuali dei km (`km`, al massimo 200) e scadenze (`deadlines`) in `user_settings.data.car`
 - Prima apertura: "Prepariamo la sezione Auto" › pannello `#car-sheet` con le categorie di uscita (proposte per nome, `CAR_NAME_RE`), "Rifornimenti in" e "+ Crea …" per Assicurazione auto, Bollo auto e Manutenzione auto se mancano. Gli annuali già presenti con "assicura" / "bollo" nel nome diventano scadenze collegate
