@@ -2,6 +2,12 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.6.2
+- IMPR-009 Prova gratuita e IMPR-010 Promemoria per disdire, solo per gli abbonamenti: nel pannello (nuovo o modifica) interruttori "Prova gratuita" (con "Finisce il") e "Promemoria per disdire" (con "Decidi entro il", proposta 2 giorni prima del prossimo addebito) e "Avvisami" (1, 3 o 7 giorni prima). Con la prova il primo addebito è alla fine della prova (`start_date` = `trial_end`); spegnendo l'interruttore la data si toglie
+- Lista Abbonamenti: riga "In prova fino al …" / "Decidi entro il …"; Dashboard "In arrivo": "· fine prova" e "· decidi se disdire"
+- Notifiche: nuovo tipo "Prove e disdette" (app e funzione `notifiche`), una volta per abbonamento e data
+- Supabase (`0.6.2_prove_disdette.sql`): `recurring` + `trial_end`, `cancel_by`, `notice_days` (0–30, di base 3); `restore_backup` ripristina anche questi campi. Funzione `notifiche` da aggiornare (stesso procedimento della 0.6.1)
+
 ## 0.6.1
 - Notifiche su iPhone (Web Push): `sw.js` (solo notifiche, nessuna cache), Impostazioni › Notifiche con stato (attive, spente, bloccate, da aprire dalla schermata Home, non supportate), cinque tipi (periodici di domani, inizio mese, anticipi in ritardo, backup, riepilogo dell'anno), ora (6–23, di base 9), "In programma" con le prossime notifiche e "Manda una notifica di prova". Iscrizione in `push_subscriptions`; scelte in `user_settings.data.notify`
 - Funzione Supabase `notifiche` (`supabase/functions/notifiche/index.ts`), chiamata ogni ora da pg_cron: aggiunge periodici e risparmio periodico dei desideri arrivati a scadenza (il Salvadanaio lo aggiunge l'app), poi manda le notifiche all'ora scelta (ora di Roma), una sola volta per tipo e periodo (`notify_log`); toglie le iscrizioni scadute (404/410). Web Push con sola WebCrypto (aes128gcm, VAPID ES256); chiavi create dalla funzione e salvate in `push_keys` (non leggibile dall'app; `push_public_key()` dà solo la pubblica). Prova: `{ test: true }` con l'accesso di chi la chiede

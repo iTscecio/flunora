@@ -5,6 +5,14 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.6.2", date: "13 novembre 2026",
+    items: [
+      "Abbonamenti con prova gratuita: scegli quando finisce e il primo addebito arriva quel giorno; nella lista compare \"In prova fino al …\" (IMPR-009)",
+      "Promemoria per disdire: una data entro cui decidere se tenere un abbonamento, utile per gli annuali che si rinnovano da soli (IMPR-010)",
+      "Flunora ti avvisa 1, 3 o 7 giorni prima, con una notifica (nuovo tipo \"Prove e disdette\" in Impostazioni › Notifiche) e in \"In arrivo\" nella Dashboard",
+    ],
+  },
+  {
     version: "0.6.1", date: "13 novembre 2026",
     items: [
       "Nuovo: le notifiche su iPhone, anche ad app chiusa. Le attivi in Impostazioni › Notifiche (serve Flunora aperta dall'icona sulla schermata Home)",
