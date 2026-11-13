@@ -225,6 +225,7 @@ function route() {
   if (p === "mesi") loadMonth();
   if (p === "anticipi") loadAdvances();
   if (p === "desideri") loadWishes();
+  if (p === "abbonamenti") renderPeriodic();
 }
 window.addEventListener("hashchange", route);
 
@@ -953,6 +954,7 @@ function openSheet(tx) {
   $("sheet-delete").textContent = "Elimina";
   $("f-repeat").value = "";
   $("f-repeat").querySelector('option[value=""]').disabled = false;
+  $("f-sub").value = "1";
   $("sheet").classList.remove("top"); $("sheet-backdrop").classList.remove("top");
   if (tx) {
     state.categoryId = tx.category_id;
@@ -1913,7 +1915,7 @@ const ICONS = {
 const SECTIONS = {
   dashboard:   { name: "Dashboard",   color: "#007aff" },
   mesi:        { name: "Mesi",        color: "#34c759" },
-  abbonamenti: { name: "Abbonamenti", color: "#ff2d55", placeholder: true },
+  abbonamenti: { name: "Abbonamenti", color: "#ff2d55" }, // 0.6.0: abbonamenti e periodici
   auto:        { name: "Auto",        color: "#ff9500", placeholder: true },
   anticipi:    { name: "Anticipi",    color: "#af52de" },
   desideri:    { name: "Desideri",    color: "#30b0c7" },
@@ -2099,7 +2101,6 @@ function openSettings() {
   $("set-backup").textContent = lastBackupText();
   renderFreqReset();
   renderLock();
-  renderPeriodicCount();
   $("settings").scrollTop = 0;
   $("settings").classList.add("open");
   $("settings").setAttribute("aria-hidden", "false");
@@ -3689,8 +3690,13 @@ document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive:
 // è unico, quindi niente doppioni. kind "risparmio" = soldi messi da parte in
 // automatico per un desiderio (wish_id) o per il Salvadanaio (wish_id vuoto).
 // =========================================================
-const REC_KINDS = ["uscita", "entrata", "investimento", "risparmio"];
-const REC_GROUP = { uscita: "Uscite", entrata: "Entrate", investimento: "Investimenti", risparmio: "Risparmio" };
+// gruppi della sezione Abbonamenti; ognuno ha la sua descrizione sulla riga
+const REC_GROUPS = [
+  { id: "abb", title: "Abbonamenti", tag: "", test: (r) => r.kind === "uscita" && r.is_subscription },
+  { id: "pag", title: "Pagamenti periodici", tag: "Pagamento periodico", test: (r) => (r.kind === "uscita" && !r.is_subscription) || r.kind === "investimento" },
+  { id: "ent", title: "Entrate periodiche", tag: "Entrata periodica", test: (r) => r.kind === "entrata" },
+  { id: "des", title: "Desideri", tag: "Risparmio periodico", test: (r) => r.kind === "risparmio" },
+];
 const daysIn = (y, m) => new Date(y, m + 1, 0).getDate(); // m da 0
 const recDate = (rec, y, m) => isoDate(new Date(y, m, Math.min(rec.day_of_month, daysIn(y, m))));
 const shortDay = (iso) => new Date(iso + "T12:00").toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" });
@@ -3787,7 +3793,12 @@ function syncRepRow() {
   const rec = !!state.editingRec;
   const show = rec || (!state.editing && !state.wishBuying && !state.dupOf && state.kind !== "anticipo");
   $("rep-row").hidden = !show;
+  syncSubRow();
   updateRepHint();
+}
+// "Tipo" (abbonamento o pagamento periodico) solo per le uscite che si ripetono
+function syncSubRow() {
+  $("sub-row").hidden = $("rep-row").hidden || !$("f-repeat").value || state.kind !== "uscita";
 }
 function updateRepHint() {
   const hint = $("rep-hint");
@@ -3799,10 +3810,10 @@ function updateRepHint() {
   const next = date > today ? date : recNext(rec, today);
   hint.textContent = state.editingRec
     ? `${recLabel(rec)}. Il prossimo arriva ${shortDay(next)}. I movimenti già aggiunti non cambiano.`
-    : `${recLabel(rec)}${date <= today ? ": questo lo aggiungo subito" : ""}, il prossimo arriva ${shortDay(date > today ? date : next)}. Lo trovi in Impostazioni › Movimenti periodici.`;
+    : `${recLabel(rec)}${date <= today ? ": questo lo aggiungo subito" : ""}, il prossimo arriva ${shortDay(date > today ? date : next)}. Lo trovi nella sezione Abbonamenti.`;
   hint.hidden = false;
 }
-$("f-repeat").addEventListener("change", updateRepHint);
+$("f-repeat").addEventListener("change", () => { syncSubRow(); updateRepHint(); });
 $("f-date").addEventListener("change", updateRepHint);
 
 async function saveNewRec(row, freq) {
@@ -3812,6 +3823,7 @@ async function saveNewRec(row, freq) {
     description: row.description || catById(row.category_id)?.name || "Movimento",
     frequency: freq, day_of_month: d, month_of_year: freq === "anno" ? m : null,
     start_date: row.date, last_date: null, active: true,
+    is_subscription: row.kind === "uscita" && $("f-sub").value === "1",
   };
   const { error } = await sb.from("recurring").insert(rec);
   if (error) {
@@ -3824,7 +3836,7 @@ async function saveNewRec(row, freq) {
   const today = isoDate(new Date());
   toast(row.date <= today ? `Movimento salvato: si ripete ${recLabel(rec).toLowerCase()}` : `Periodico salvato: il primo arriva ${shortDay(row.date)}`);
   refreshAfterChange(row.date);
-  if ($("periodic").classList.contains("open")) renderPeriodic();
+  if (state.page === "abbonamenti") renderPeriodic();
 }
 
 // ---------- modifica di un periodico (stesso pannello del +) ----------
@@ -3841,13 +3853,13 @@ function openRecSheet(rec) {
   state.editingRec.shownDate = next;
   $("f-repeat").value = rec.frequency;
   $("f-repeat").querySelector('option[value=""]').disabled = true;
+  $("f-sub").value = rec.is_subscription ? "1" : "0";
   $("freq-box").hidden = true;
   $("kind-anticipo").hidden = true;
   $("sheet-foot").hidden = false;
   $("sheet-dup").hidden = true;
   $("sheet-pause").hidden = false;
   $("sheet-pause").textContent = rec.active ? "Sospendi" : "Riattiva";
-  $("sheet").classList.add("top"); $("sheet-backdrop").classList.add("top");
   syncRepRow();
   setMsg($("sheet-msg"), "");
 }
@@ -3865,6 +3877,7 @@ async function saveRecFromSheet() {
     kind: state.kind, category_id: state.categoryId, amount_cents: amount,
     description: $("f-desc").value.trim() || catById(state.categoryId)?.name || "Movimento",
     frequency: freq, day_of_month: d, month_of_year: freq === "anno" ? m : null,
+    is_subscription: state.kind === "uscita" && $("f-sub").value === "1",
   };
   // data o frequenza cambiate: si riparte da quella data (i mesi già fatti restano, senza doppioni)
   if (date !== rec.shownDate || freq !== rec.frequency) Object.assign(patch, { start_date: date, last_date: null });
@@ -3879,8 +3892,8 @@ async function saveRecFromSheet() {
 $("sheet-pause").addEventListener("click", async () => {
   const rec = state.editingRec;
   if (!rec) return;
-  // riattivando, riparte dalla prossima data: i mesi in pausa non si recuperano
-  const patch = rec.active ? { active: false } : { active: true, last_date: isoDate(new Date()) };
+  // riattivando, riparte dal giorno dell'attivazione (compreso): i mesi in pausa non si recuperano
+  const patch = rec.active ? { active: false } : { active: true, last_date: isoDate(new Date(Date.now() - 864e5)) };
   const { error } = await sb.from("recurring").update(patch).eq("id", rec.id);
   if (error) return toast("Errore: " + traduciErrore(error.message));
   closeSheet();
@@ -3902,35 +3915,16 @@ function deleteRec(rec) {
   });
 }
 
-// ---------- pagina Impostazioni › Movimenti periodici ----------
-async function renderPeriodicCount() {
-  const recs = await loadRecurring();
-  const on = recs.filter((r) => r.active).length;
-  $("set-periodic").textContent = state.recMissing ? "" : on ? String(on) : "Nessuno";
-}
-
-async function openPeriodic() {
-  $("periodic").scrollTop = 0;
-  $("periodic").classList.add("open");
-  $("periodic").setAttribute("aria-hidden", "false");
-  await renderPeriodic();
-}
-function closePeriodic() {
-  $("periodic").classList.remove("open");
-  $("periodic").setAttribute("aria-hidden", "true");
-  renderPeriodicCount();
-}
-$("open-periodic").addEventListener("click", openPeriodic);
-$("periodic-back").addEventListener("click", closePeriodic);
+// ---------- sezione Abbonamenti ----------
 $("per-new").addEventListener("click", () => {
   openSheet(null);
-  if (state.kind === "anticipo") setKind("uscita");
+  setKind("uscita");
   $("f-repeat").value = "mese";
-  $("sheet-title").textContent = "Nuovo periodico";
+  $("f-sub").value = "1";
+  $("sheet-title").textContent = "Nuovo abbonamento";
   $("freq-box").hidden = true;
   $("kind-anticipo").hidden = true;
-  $("sheet").classList.add("top"); $("sheet-backdrop").classList.add("top");
-  updateRepHint();
+  syncRepRow();
 });
 
 async function renderPeriodic() {
@@ -3945,20 +3939,21 @@ async function renderPeriodic() {
   }
   // quanto pesano al mese (gli annuali divisi per 12)
   const on = recs.filter((r) => r.active);
-  const sum = (k) => on.filter((r) => r.kind === k).reduce((a, r) => a + recMonthly(r), 0);
   const sum_ = $("per-sum");
   sum_.hidden = !on.length;
-  sum_.replaceChildren(
-    ...[["Uscite al mese", sum("uscita"), "out"], ["Entrate al mese", sum("entrata"), "in"], ["Risparmio al mese", sum("risparmio"), "save"]]
-      .filter(([, c]) => c).map(([l, c, k]) => { const d = el("div", "per-kpi " + k); d.append(el("span", "secondary small", l), el("strong", null, fmt(c))); return d; })
-  );
+  sum_.replaceChildren(...REC_GROUPS.map((g) => [g, on.filter(g.test).reduce((a, r) => a + recMonthly(r), 0)]).filter(([, c]) => c).map(([g, c]) => {
+    const d = el("div", "per-kpi " + g.id);
+    d.append(el("span", "secondary small", `${g.title} al mese`), el("strong", null, fmt(c)));
+    return d;
+  }));
   const today = isoDate(new Date());
-  for (const k of REC_KINDS) {
-    const list = recs.filter((r) => r.kind === k).sort((a, b) => (b.active - a.active) || (recNext(a, a.last_date) || "").localeCompare(recNext(b, b.last_date) || ""));
+  for (const g of REC_GROUPS) {
+    const list = recs.filter(g.test).sort((a, b) => (b.active - a.active) || (recNext(a, a.last_date) || "").localeCompare(recNext(b, b.last_date) || ""));
     if (!list.length) continue;
-    box.append(el("h3", "section-title", REC_GROUP[k]));
+    box.append(el("h3", "section-title", g.title));
     const ul = el("ul", "card list settings per-list");
     for (const r of list) {
+      const k = r.kind;
       const li = el("li", "tap" + (r.active ? "" : " paused"));
       if (k === "risparmio") {
         const ico = el("span", "cat-ico");
@@ -3970,7 +3965,11 @@ async function renderPeriodic() {
       const wish = r.wish_id ? state.wishes.find((w) => w.id === r.wish_id) : null;
       const name = k === "risparmio" ? (r.wish_id ? wish?.name || r.description : POOL_NAME) : r.description;
       const next = recNext(r, r.last_date);
-      label.append(el("span", null, name), el("small", null, r.active ? `${recLabel(r)} · prossimo ${next === today ? "oggi" : advDate(next)}` : `${recLabel(r)} · in pausa`));
+      const when = r.active ? `${recLabel(r)} · prossimo ${next === today ? "oggi" : advDate(next)}` : `${recLabel(r)} · in pausa`;
+      const sub = el("small");
+      if (g.tag) sub.append(el("b", "per-tag " + g.id, g.tag), " · ");
+      sub.append(when);
+      label.append(el("span", null, name), sub);
       const sign = k === "entrata" ? "+ " : k === "risparmio" ? "" : "− ";
       li.append(label, el("span", "value per-amt" + (k === "entrata" ? " in" : ""), sign + fmt(r.amount_cents)), el("span", "chev", "›"));
       li.addEventListener("click", () => (k === "risparmio" ? openWishAuto(r.wish_id ? (wish || { id: r.wish_id, name: r.description, price_cents: 0, saved_cents: 0 }) : poolItem()) : openRecSheet(r)));
@@ -3978,7 +3977,7 @@ async function renderPeriodic() {
     }
     box.append(ul);
   }
-  if (!recs.length) box.append(el("p", "secondary foot per-empty", "Nessun movimento periodico. Creane uno qui sotto, oppure scegli \"Ripeti\" quando aggiungi un movimento con +."));
+  if (!recs.length) box.append(el("p", "secondary foot per-empty", "Nessun abbonamento o pagamento periodico. Tocca \"+ Nuovo\", oppure scegli \"Ripeti\" quando aggiungi un movimento con +."));
 }
 
 // ---------- Dashboard: in arrivo nei prossimi 7 giorni ----------
@@ -4000,7 +3999,7 @@ async function renderUpcoming() {
     return li;
   }));
 }
-$("upcoming-all").addEventListener("click", () => { openSettings(); openPeriodic(); });
+$("upcoming-all").addEventListener("click", () => { location.hash = "#abbonamenti"; });
 
 // ---------- Dashboard: recap del mese passato (nei primi 10 giorni del mese) ----------
 const recapSeen = () => { try { return localStorage.getItem("flunora.recapSeen") || ""; } catch { return ""; } };
@@ -4112,7 +4111,7 @@ $("wauto-sheet").addEventListener("submit", async (e) => {
   toast(start === today ? `Risparmio periodico attivo: oggi ${fmt(cents)} per ${target.name}` : `Risparmio periodico attivo: il primo ${shortDay(start)}`);
   await runRecurring(true);
   if (state.page === "desideri") loadWishes();
-  if ($("periodic").classList.contains("open")) renderPeriodic();
+  if (state.page === "abbonamenti") renderPeriodic();
 });
 $("wauto-stop").addEventListener("click", async () => {
   const { target, rec } = state.wishAuto;
@@ -4122,7 +4121,7 @@ $("wauto-stop").addEventListener("click", async () => {
   closeWishAuto();
   toast(`Risparmio periodico tolto da ${target.name}`);
   if (state.page === "desideri") loadWishes();
-  if ($("periodic").classList.contains("open")) renderPeriodic();
+  if (state.page === "abbonamenti") renderPeriodic();
 });
 
 // =========================================================

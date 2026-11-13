@@ -7,8 +7,9 @@ window.RELEASES = [
   {
     version: "0.6.0", date: "novembre 2026",
     items: [
-      "Nuovo: i movimenti periodici. Nel pannello + scegli \"Ripeti\" (ogni mese o ogni anno) e Flunora aggiunge il movimento da sola, con la sua data, quando apri l'app",
-      "Li trovi tutti in Impostazioni › Movimenti periodici: quanto pesano al mese, la prossima data, e puoi modificarli, sospenderli o eliminarli",
+      "Nuovo: la sezione Abbonamenti (si attiva in Impostazioni › Sezioni). Dentro trovi abbonamenti, pagamenti ed entrate periodiche e il risparmio periodico dei Desideri, con quanto pesano al mese e la prossima data",
+      "Nel pannello + scegli \"Ripeti\" (ogni mese o ogni anno) e, per le uscite, se è un abbonamento o un pagamento periodico: Flunora aggiunge il movimento da sola, con la sua data, quando apri l'app",
+      "Ogni abbonamento o pagamento periodico si può modificare, sospendere o eliminare; riattivandolo riparte da quel giorno",
       "Nei movimenti del mese quelli periodici sono segnati con ↻",
       "Nuovo nei Desideri: il risparmio periodico. Scegli quanto mettere da parte ogni mese per un desiderio o nel Salvadanaio; si ferma da solo quando il desiderio è completo",
       "Nella Dashboard: \"In arrivo\" con i periodici dei prossimi 7 giorni e, a inizio mese, il riepilogo del mese passato",

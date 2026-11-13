@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611131234">
+  <link rel="stylesheet" href="css/style.css?v=202611131313">
 </head>
 <body>
 
@@ -95,7 +95,7 @@
         <p class="secondary small" id="recap-note"></p>
       </section>
       <section class="card upcoming" id="upcoming" hidden>
-        <div class="up-head"><strong>In arrivo</strong><button type="button" id="upcoming-all" class="link-btn">Periodici &rsaquo;</button></div>
+        <div class="up-head"><strong>In arrivo</strong><button type="button" id="upcoming-all" class="link-btn">Abbonamenti &rsaquo;</button></div>
         <ul class="up-list" id="up-list"></ul>
       </section>
 
@@ -188,13 +188,12 @@
     </main>
 
     <!-- ---------- SEZIONI SEGNAPOSTO (contenuto in arrivo) ---------- -->
+    <!-- ---------- ABBONAMENTI (0.6.0): abbonamenti, pagamenti ed entrate periodiche, risparmio periodico ---------- -->
     <main id="page-abbonamenti" class="page" hidden>
-      <header class="page-head"><h1>Abbonamenti</h1></header>
-      <div class="card placeholder">
-        <span class="ph-ico" style="--c:#ff2d55"><svg viewBox="0 0 24 24" class="stroke"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg></span>
-        <h2>In arrivo</h2>
-        <p class="secondary">Qui gestirai i tuoi abbonamenti: costo mensile e annuale, rinnovi e scadenze.</p>
-      </div>
+      <header class="page-head"><h1>Abbonamenti</h1><button type="button" id="per-new" class="wish-new">+ Nuovo</button></header>
+      <div class="card per-sum" id="per-sum"></div>
+      <div id="per-groups"></div>
+      <p class="secondary small foot">Flunora aggiunge abbonamenti e pagamenti periodici quando apri l'app, ognuno con la sua data: se la apri dopo qualche giorno arrivano tutti, senza doppioni. Il risparmio periodico dei Desideri si imposta dal menu del desiderio.</p>
     </main>
 
     <main id="page-auto" class="page" hidden>
@@ -302,8 +301,6 @@
             <span class="label">Importa estratto conto</span><span class="chev">&rsaquo;</span></li>
           <li class="tap" id="freq-reset" hidden><span class="ico" style="--c:#af52de"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v5h5"/></svg></span>
             <span class="label">Mostra le scorciatoie nascoste</span><span id="freq-reset-n" class="value"></span></li>
-          <li class="tap" id="open-periodic"><span class="ico" style="--c:#ff2d55"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg></span>
-            <span class="label">Movimenti periodici</span><span id="set-periodic" class="value"></span><span class="chev">&rsaquo;</span></li>
         </ul>
 
         <h3 class="section-title">Sicurezza</h3>
@@ -406,6 +403,8 @@
         <label class="group-row"><span>Descrizione</span><input id="f-desc" placeholder="Facoltativa" maxlength="120" autocomplete="off"></label>
         <label class="group-row" id="rep-row"><span>Ripeti</span>
           <select id="f-repeat"><option value="">Mai</option><option value="mese">Ogni mese</option><option value="anno">Ogni anno</option></select></label>
+        <label class="group-row" id="sub-row" hidden><span>Tipo</span>
+          <select id="f-sub"><option value="1">Abbonamento</option><option value="0">Pagamento periodico</option></select></label>
       </div>
       <p id="rep-hint" class="secondary small foot" hidden></p>
 
@@ -416,23 +415,6 @@
         <button type="button" id="sheet-delete" class="btn-danger">Elimina</button>
       </div>
     </form>
-
-    <!-- ---------- 0.6.0: MOVIMENTI PERIODICI (pagina dentro le Impostazioni) ---------- -->
-    <div id="periodic" class="settings-panel sub-panel" aria-hidden="true">
-      <header class="glass settings-head">
-        <button type="button" id="periodic-back" class="link-btn back-btn">&lsaquo; Impostazioni</button>
-        <h2>Periodici</h2>
-        <span></span>
-      </header>
-      <div class="settings-body">
-        <div class="card per-sum" id="per-sum"></div>
-        <div id="per-groups"></div>
-        <ul class="card list settings">
-          <li class="tap" id="per-new"><span class="label accent-text">+ Nuovo movimento periodico</span></li>
-        </ul>
-        <p class="secondary small foot">Flunora aggiunge i movimenti periodici quando apri l'app, con la loro data: se la apri dopo qualche giorno, arrivano tutti, senza doppioni. Il risparmio periodico si imposta dai Desideri.</p>
-      </div>
-    </div>
 
     <!-- ---------- CATEGORIE (0.2.0): pagina dentro le Impostazioni ---------- -->
     <div id="categories" class="settings-panel sub-panel" aria-hidden="true">
@@ -777,11 +759,11 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611131234"></script>
-  <script src="js/releases.js?v=202611131234"></script>
-  <script src="js/icons.js?v=202611131234"></script>
-  <script src="js/app.js?v=202611131234"></script>
-  <script src="js/bank-bdp.js?v=202611131234"></script>
-  <script src="js/import.js?v=202611131234"></script>
+  <script src="js/config.js?v=202611131313"></script>
+  <script src="js/releases.js?v=202611131313"></script>
+  <script src="js/icons.js?v=202611131313"></script>
+  <script src="js/app.js?v=202611131313"></script>
+  <script src="js/bank-bdp.js?v=202611131313"></script>
+  <script src="js/import.js?v=202611131313"></script>
 </body>
 </html>
