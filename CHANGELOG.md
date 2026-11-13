@@ -2,6 +2,18 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.6.0
+- Sezione Abbonamenti (non più segnaposto): riepilogo "al mese" per gruppo (gli annuali divisi per 12) e quattro gruppi — Abbonamenti, Pagamenti periodici, Entrate periodiche, Desideri — con la descrizione sulla riga ("Pagamento periodico", "Entrata periodica", "Risparmio periodico"), la regola ("Ogni mese, il 2", "Ogni anno, il 20 marzo", "l'ultimo giorno") e la prossima data; "+ Nuovo" apre il pannello + come abbonamento
+- Pannello +: riga "Ripeti" (Mai / Ogni mese / Ogni anno) per i movimenti nuovi e, per le uscite, "Tipo" (Abbonamento / Pagamento periodico). Il giorno è quello della data; il 31 diventa l'ultimo giorno dei mesi corti. Salvando nasce il periodico; se la data è oggi o passata il primo movimento arriva subito
+- Modifica di un periodico nello stesso pannello: importo, categoria, descrizione, data (= prossima), frequenza e tipo; cambiando data o frequenza si riparte da lì (i mesi già fatti non si ripetono). "Sospendi" / "Riattiva" (riparte dal giorno della riattivazione, i mesi di pausa non si recuperano) ed "Elimina" (i movimenti già aggiunti restano)
+- `runRecurring` all'avvio: per ogni periodico attivo aggiunge le date arrivate (al massimo 36 per volta) con `recurring_id`; l'indice unico periodico + mese evita i doppioni; aggiorna `last_date`; avviso "Aggiunto 1 movimento periodico: … · Vedi"
+- Nei movimenti del mese i periodici hanno "↻ periodico"
+- Risparmio periodico (kind `risparmio`): dal menu di un desiderio o del Salvadanaio, importo e giorno (con la rata per arrivare alla scadenza, se c'è). Non supera quanto manca; si ferma quando il desiderio non è più attivo. Riga "↻ … ogni mese, il …" sulla carta
+- Dashboard: "In arrivo" (periodici dei prossimi 7 giorni) e, nei primi 10 giorni del mese, "Mese in breve" (entrate, uscite, rimasti, spesa più alta, uscite rispetto al mese prima), chiudibile (`flunora.recapSeen`)
+- Impostazioni: tolta la voce "Movimenti periodici · Coming Soon"
+- Supabase (`0.6.0_abbonamenti.sql`): `recurring` + `frequency`, `month_of_year`, `start_date`, `last_date`, `is_subscription`, `wish_id`; `category_id` facoltativa solo per il risparmio; giorno 1–31; `restore_backup` ripristina anche i periodici (parte 8; il risparmio si ricollega al desiderio con lo stesso nome). I modelli vecchi senza `start_date` sono ignorati
+- Backup: i periodici con il nome del desiderio collegato
+
 ## 0.5.1
 - IMPR-003 Duplica movimento: nel pannello "Modifica movimento" i pulsanti in fondo sono "Duplica" ed "Elimina" (`#sheet-foot`). "Duplica" trasforma il pannello in un movimento nuovo (`state.dupOf`) con tipo, categoria, importo e descrizione dell'originale e la data di oggi; niente Frequenti né Anticipo
 - IMPR-008 Salvadanaio: soldi destinati ai Desideri ma non assegnati. Sta nelle impostazioni sincronizzate (`user_settings.data.wish_pool_cents`, anche nel backup): nessuno script Supabase. Carta `#wish-pool` con "Metti da parte" e "Assegna"; toccando il titolo: Assegna, Riprendi. Conta nel totale "Messi da parte" e nei Desideri del saldo (Disponibile = conto − desideri − Salvadanaio)

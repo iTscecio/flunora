@@ -3151,7 +3151,8 @@ async function buildBackup() {
       categories: stripUser(categories),
       transactions: stripUser(transactions),
       budgets: budgets.map((b) => ({ month: b.month, amount_cents: b.amount_cents })),
-      recurring: stripUser(recurring),
+      // 0.6.0: il risparmio periodico ricorda il nome del desiderio, per ricollegarlo al ripristino
+      recurring: stripUser(recurring).map((r) => ({ ...r, wish_name: r.wish_id ? wishes.find((w) => w.id === r.wish_id)?.name || null : null })),
       import_rules: importRules.map((r) => ({ pattern: r.pattern, category_id: r.category_id })),
       // 0.4.5: anticipi con le loro quote (i collegamenti ai movimenti non servono al ripristino)
       advances: advances.map((a) => ({
@@ -3488,7 +3489,7 @@ async function runRestore() {
     // 2. ripristino in un'unica operazione sul database
     const d = r.obj.data;
     const { data: res, error } = await sb.rpc("restore_backup", {
-      payload: { categories: d.categories, transactions: d.transactions, budgets: d.budgets || [], import_rules: d.import_rules || [], advances: d.advances || [], wishes: d.wishes || [] },
+      payload: { categories: d.categories, transactions: d.transactions, budgets: d.budgets || [], import_rules: d.import_rules || [], advances: d.advances || [], wishes: d.wishes || [], recurring: d.recurring || [] },
       replace_all: r.mode === "replace",
     });
     if (error) {
