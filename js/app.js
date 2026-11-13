@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.6.3";
+const APP_VERSION = "0.6.4";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -4738,11 +4738,12 @@ $("lock-toggle").addEventListener("change", async (e) => {
 });
 
 let lockBusy = false;
+// IMPR-015 (0.6.4): niente richiesta automatica. Su iPhone una richiesta di Face ID
+// senza un tocco passa prima dal popup di conferma di Apple; dal pulsante parte subito.
 function showLock() {
   $("lock").hidden = false;
   document.body.classList.add("is-locked");
   setMsg($("lock-msg"), "");
-  unlock();
 }
 function hideLock() {
   $("lock").hidden = true;
@@ -4763,7 +4764,7 @@ async function unlock() {
     } });
     hideLock();
   } catch (err) {
-    // la prima richiesta automatica può non partire senza un tocco: resta il pulsante
+    // annullato o non riconosciuto: il pulsante resta lì per riprovare
     setMsg($("lock-msg"), err?.name === "NotAllowedError" ? "" : "Face ID non riuscito. Riprova.", true);
   } finally { lockBusy = false; }
 }

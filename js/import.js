@@ -200,6 +200,21 @@ const findCat = (kind, re) => state.categories.find((c) => c.kind === kind && !c
 const catByName = (kind, name) => findCat(kind, new RegExp("^" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i"));
 const daysBetween = (a, b) => Math.abs(Date.parse(a + "T12:00") - Date.parse(b + "T12:00")) / 864e5;
 
+// IMPR-013 (0.6.4): abbonamenti e periodici. L'addebito sull'estratto conto può arrivare
+// qualche giorno prima o dopo la data del periodico, e con un prezzo diverso.
+const REC_DAYS = 5;
+const normTxt = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+const REC_STOP = new Set(["abbonamento", "pagamento", "mensile", "annuale", "rata", "the", "com", "www", "per", "con", "del", "della", "di", "srl", "spa"]);
+// il nome dell'abbonamento compare nel testo dell'estratto conto? ("Netflix" ↔ "Netflix.com Amsterdam")
+function recNameMatch(rec, it) {
+  const text = " " + normTxt([it.title, it.description, it.row?.type, it.row?.detail].filter(Boolean).join(" ")) + " ";
+  const words = normTxt(rec.description).split(" ").filter((w) => w.length >= 3 && !REC_STOP.has(w));
+  if (!words.length) return false;
+  const joined = words.join("");                       // "Disney Plus" ↔ "DisneyPlus"
+  return words.some((w) => w.length >= 4 && text.includes(" " + w)) || text.replace(/ /g, "").includes(joined)
+    || (words.length === 1 && text.includes(" " + words[0] + " "));
+}
+
 async function buildItems(res) {
   const keys = FlunoraBDP.importKeys(res);
   const canoni = FlunoraBDP.pairCanoni(res.rows);
@@ -218,7 +233,7 @@ async function buildItems(res) {
   const pad = (d, n) => { const x = new Date(d + "T12:00"); x.setDate(x.getDate() + n); return isoDate(x); };
   const existing = [];
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await sb.from("transactions").select("id, date, amount_cents, kind, description, import_key, category_id")
+    const { data, error } = await sb.from("transactions").select("id, date, amount_cents, kind, description, import_key, category_id, recurring_id")
       .gte("date", pad(dates[0], -3)).lte("date", pad(dates.at(-1), 3)).order("date").range(from, from + 999);
     if (error) throw error;
     existing.push(...data);
@@ -242,10 +257,58 @@ async function buildItems(res) {
   const advById = new Map(advances.map((a) => [a.id, a]));
   const usedAdv = new Set(), usedShare = new Set();
 
+  // IMPR-013: periodici attivi (senza lo script 0.6.0 si va avanti senza)
+  let recs = [];
+  try { recs = (await loadRecurring()).filter((r) => r.active && r.kind !== "risparmio"); } catch { recs = []; }
+  const recById = new Map(recs.map((r) => [r.id, r]));
+  const usedRec = new Set();
+
   for (const it of items) {
     if (canoni.has(it.i)) { it.status = "ign"; it.note = "Canone +/− nello stesso giorno: si annullano"; continue; }
     if (it.ignore) { it.status = "ign"; it.note = it.reason; continue; }
     if (importedKeys.has(it.key)) { it.status = "dup"; it.note = "Già importato in precedenza"; continue; }
+    // IMPR-013: addebito di un abbonamento già aggiunto da Flunora, con qualche giorno
+    // di scarto o con un prezzo diverso
+    {
+      const recTx = existing.filter((t) => t.recurring_id && !t.import_key && !usedManual.has(t.id) && t.kind === it.kind
+        && daysBetween(t.date, it.date) <= REC_DAYS)
+        .map((t) => ({ t, rec: recById.get(t.recurring_id) }))
+        .filter(({ t, rec }) => t.amount_cents === it.amount ? true : rec && recNameMatch(rec, it))
+        .sort((a, b) => (a.t.amount_cents !== it.amount) - (b.t.amount_cents !== it.amount) || daysBetween(a.t.date, it.date) - daysBetween(b.t.date, it.date));
+      const hit = recTx[0];
+      if (hit) {
+        usedManual.add(hit.t.id);
+        const name = hit.rec?.description || hit.t.description || "periodico";
+        it.twinOf = hit.t.id;
+        if (hit.t.amount_cents === it.amount) {
+          it.status = "dup";
+          it.note = `Già presente: ${name} del ${shortDate(hit.t.date)}`;
+        } else {
+          // stesso abbonamento, prezzo diverso: si corregge l'addebito invece di aggiungerne un altro
+          it.status = "rec";
+          it.recFix = { tx: hit.t, rec: hit.rec || null, name, updatePrice: !!(hit.rec && hit.rec.amount_cents === hit.t.amount_cents) };
+        }
+        continue;
+      }
+    }
+    // IMPR-013: addebito arrivato prima che Flunora aggiungesse il periodico
+    {
+      const cand = recs.filter((r) => !usedRec.has(r.id) && r.kind === it.kind).map((rec) => ({ rec, d: recNext(rec, rec.last_date) }))
+        .filter(({ rec, d }) => d && daysBetween(d, it.date) <= REC_DAYS
+          && (recNameMatch(rec, it) || (rec.amount_cents === it.amount && daysBetween(d, it.date) <= 2)))
+        .sort((a, b) => daysBetween(a.d, it.date) - daysBetween(b.d, it.date));
+      if (cand[0]) {
+        const { rec, d } = cand[0];
+        usedRec.add(rec.id);
+        const cat = catById(rec.category_id);
+        it.status = cat && !cat.archived ? "new" : "ask";
+        it.categoryId = it.status === "new" ? rec.category_id : null;
+        it.source = "rec";
+        it.description = rec.description;
+        it.recLink = { rec, d, updatePrice: rec.amount_cents !== it.amount };
+        continue;
+      }
+    }
     // inserito a mano? stesso tipo e importo, data entro 3 giorni
     const twin = existing.find((t) => !t.import_key && !usedManual.has(t.id) && t.kind === it.kind
       && t.amount_cents === it.amount && daysBetween(t.date, it.date) <= 3);
@@ -405,6 +468,8 @@ function renderCheck() {
   }
   const sum = el("ul", "card list settings");
   const kv = (a, b, cls = "") => { const li = el("li", "imp-kv " + cls); li.append(el("span", "label", a), el("b", null, String(b))); return li; };
+  const recN = imp.items.filter((it) => it.recLink || it.recFix).length;
+  if (recN) sum.append(kv("Abbonamenti riconosciuti", recN));
   sum.append(kv("Da importare", countBy("new")), kv("Da confermare", countBy("ask"), "warn"),
     kv("Ignorati (spostamenti tra conti, canone, già presenti)", countBy("ign") + countBy("dup"), "muted"));
   body.push(sum);
@@ -424,7 +489,7 @@ function setFoot(label, note, onClick, disabled = false) {
 // ---------- 3. revisione ----------
 const TABS = [["all", "Tutti"], ["ask", "Dubbi"], ["new", "Nuovi"], ["ign", "Ignorati"]];
 const inTab = (it, tab) => tab === "all" || (tab === "ign" ? it.status === "ign" || it.status === "dup"
-  : tab === "new" ? it.status === "new" || it.status === "adv" : it.status === tab);
+  : tab === "new" ? it.status === "new" || it.status === "adv" || it.status === "rec" : it.status === tab);
 
 function renderReview() {
   $("imp-title").textContent = "Rivedi";
@@ -451,12 +516,13 @@ function renderReview() {
   }
   if (body.length === 2) body.push(el("p", "secondary imp-empty", "Nessun movimento qui."));
   $("imp-body").replaceChildren(...body);
-  const n = countBy("new"), ask = countBy("ask"), back = countBy("adv");
+  const n = countBy("new"), ask = countBy("ask"), back = countBy("adv"), fix = countBy("rec");
   const notes = [];
+  if (fix) notes.push(`${fix === 1 ? "1 addebito di un abbonamento viene corretto" : `${fix} addebiti di abbonamenti vengono corretti`} con l'importo dell'estratto conto`);
   if (back) notes.push(`${back === 1 ? "1 restituzione chiude la sua quota" : `${back} restituzioni chiudono le loro quote`} negli Anticipi`);
   if (ask) notes.push(`${ask === 1 ? "Il movimento da confermare resta fuori" : `I ${ask} da confermare restano fuori`} finché non scegli la categoria`);
-  setFoot(n ? `Importa ${n} ${n === 1 ? "movimento" : "movimenti"}` : back ? "Conferma le restituzioni" : "Nessun movimento da importare",
-    notes.join(". "), doImport, n + back === 0);
+  setFoot(n ? `Importa ${n} ${n === 1 ? "movimento" : "movimenti"}` : back || fix ? "Conferma" : "Nessun movimento da importare",
+    notes.join(". "), doImport, n + back + fix === 0);
 }
 
 function catLabel(id) {
@@ -470,7 +536,12 @@ function itemRow(it) {
   t.append(el("b", null, it.title),
     el("small", null, [shortDate(it.date), it.via, it.kind === "entrata" ? "entrata" : ""].filter(Boolean).join(" · ")));
   const chip = el("span", "imp-chip");
-  if (it.status === "adv") {
+  if (it.status === "rec") {
+    // IMPR-013: abbonamento già in Flunora con un altro importo
+    chip.classList.add("rec");
+    chip.append(document.createTextNode(`${it.recFix.name} · era ${fmt(it.recFix.tx.amount_cents)}`));
+    if (it.recFix.updatePrice) chip.append(el("span", "fresh rec", "nuovo prezzo"));
+  } else if (it.status === "adv") {
     chip.classList.add("adv");
     chip.textContent = `Restituzione di ${it.advShare.person} · ${it.advDesc}`;
   } else if (it.status === "ask" && it.advOptions) {
@@ -481,6 +552,7 @@ function itemRow(it) {
     const c = catLabel(it.categoryId);
     chip.append(catIcon(c, "sm"), document.createTextNode(c?.name || "?"));
     if (c?.fresh) chip.append(el("span", "fresh", "nuova"));
+    if (it.recLink) chip.append(el("span", "fresh rec", it.recLink.updatePrice ? `${it.recLink.rec.description} · nuovo prezzo` : it.recLink.rec.description));
   } else if (it.status === "ask") {
     chip.classList.add("ask");
     const s = it.suggest && catLabel(it.suggest);
@@ -495,7 +567,34 @@ function itemRow(it) {
   return li;
 }
 
+// IMPR-013: scelte per un addebito riconosciuto come abbonamento
+function pickRec(it) {
+  const f = it.recFix, l = it.recLink;
+  const rec = f ? f.rec : l.rec;
+  const from = f ? f.tx.amount_cents : rec.amount_cents;
+  const year = (d) => Math.abs(rec?.frequency === "anno" ? d : d * 12);
+  const diff = it.amount - from;
+  const actions = [];
+  if (f) {
+    if (rec) actions.push({ label: `Correggi l'addebito e usa ${fmt(it.amount)} dai prossimi`, onClick: () => { it.status = "rec"; f.updatePrice = true; renderReview(); } });
+    actions.push({ label: "Correggi solo questo addebito", onClick: () => { it.status = "rec"; f.updatePrice = false; renderReview(); } });
+    actions.push({ label: "Importalo come movimento a parte", onClick: () => { delete it.recFix; it.status = "ask"; it.twinOf = null; pickCategory(it); } });
+  } else {
+    if (diff) actions.push({ label: `Sì, e usa ${fmt(it.amount)} dai prossimi`, onClick: () => { l.updatePrice = true; renderReview(); } });
+    actions.push({ label: diff ? "Sì, ma cambia solo questo addebito" : `Sì, è ${rec.description}`, onClick: () => { l.updatePrice = false; renderReview(); } });
+    actions.push({ label: "No, non è l'abbonamento", onClick: () => { delete it.recLink; it.source = ""; it.description = it.title; it.status = "ask"; pickCategory(it); } });
+  }
+  actions.push({ label: "Non importare", danger: true, onClick: () => { delete it.recFix; delete it.recLink; skipItem(it); } });
+  const msg = f
+    ? `Flunora l'aveva già aggiunto il ${shortDate(f.tx.date)} a ${fmt(from)}; l'estratto conto dice ${fmt(it.amount)}. Non diventa un doppione: si corregge l'importo.`
+      + (rec ? ` Se il prezzo è cambiato: ${diff > 0 ? "+" : "−"}${fmt(year(diff))} all'anno.` : "")
+    : `È l'addebito di ${rec.description} previsto il ${shortDate(l.d)}: viene collegato all'abbonamento e Flunora non lo aggiunge una seconda volta.`
+      + (diff ? ` Il prezzo era ${fmt(from)}: ${diff > 0 ? "+" : "−"}${fmt(year(diff))} all'anno.` : "");
+  actionSheet({ title: `${f ? f.name : rec.description} · ${(it.kind === "entrata" ? "+ " : "− ") + fmt(it.amount)}`, message: msg, actions });
+}
+
 function pickCategory(it) {
+  if (it.recFix || (it.recLink && it.status === "new")) return pickRec(it);
   const cats = state.categories.filter((c) => c.kind === it.kind && !c.archived);
   const actions = [];
   // 0.4.6: collega l'entrata a una quota da restituire (non diventa un movimento)
@@ -541,6 +640,7 @@ function setItemCat(it, catId) {
 }
 
 function skipItem(it) {
+  delete it.recFix; delete it.recLink;
   it.status = "ign"; it.note = "Escluso da te"; it.categoryId = null; it.remember = false;
   renderReview();
 }
@@ -549,7 +649,8 @@ function skipItem(it) {
 async function doImport() {
   const chosen = imp.items.filter((it) => it.status === "new");
   const backs = imp.items.filter((it) => it.status === "adv"); // 0.4.6
-  if ((!chosen.length && !backs.length) || imp.busy) return;
+  const fixes = imp.items.filter((it) => it.status === "rec" && it.recFix); // IMPR-013
+  if ((!chosen.length && !backs.length && !fixes.length) || imp.busy) return;
   imp.busy = true;
   $("imp-go").disabled = true;
   impLoading("Salvo una copia dei tuoi dati e importo…");
@@ -595,8 +696,28 @@ async function doImport() {
         .eq("id", it.advShare.id).eq("status", "aperta");
       if (error) throw error;
     }
+    // IMPR-013: addebiti collegati agli abbonamenti
+    const prices = new Map();   // abbonamento -> nuovo prezzo
+    const linked = chosen.filter((it) => it.recLink);
+    for (const it of linked) {
+      const { rec, d } = it.recLink;
+      await sb.from("transactions").update({ recurring_id: rec.id }).eq("import_key", it.key).is("recurring_id", null);
+      // la data prevista è coperta: Flunora non lo aggiunge di nuovo. Nello stesso mese ci pensa
+      // già il controllo dei doppioni (un addebito per periodico al mese), e annullando
+      // l'importazione il periodico torna normale; a cavallo di due mesi si sposta l'ultima data
+      if (d.slice(0, 7) !== it.date.slice(0, 7) && (!rec.last_date || d > rec.last_date)) {
+        await sb.from("recurring").update({ last_date: d }).eq("id", rec.id);
+      }
+      if (it.recLink.updatePrice) prices.set(rec.id, it.amount);
+    }
+    for (const it of fixes) {
+      const { error } = await sb.from("transactions").update({ amount_cents: it.amount, import_key: it.key }).eq("id", it.recFix.tx.id);
+      if (error) throw error;
+      if (it.recFix.updatePrice && it.recFix.rec) prices.set(it.recFix.rec.id, it.amount);
+    }
+    for (const [id, cents] of prices) await sb.from("recurring").update({ amount_cents: cents }).eq("id", id);
     imp.batch = data;
-    renderDone(chosen, data, rules.size, backs.length);
+    renderDone(chosen, data, rules.size, backs.length, { linked: linked.length, fixed: fixes.length, prices: prices.size });
     renderImportHistory();
     refreshPagesAfterImport();
   } catch (err) {
@@ -606,7 +727,7 @@ async function doImport() {
   }
 }
 
-function renderDone(chosen, result, nRules, nBacks = 0) {
+function renderDone(chosen, result, nRules, nBacks = 0, recs = { linked: 0, fixed: 0, prices: 0 }) {
   $("imp-title").textContent = "Fatto";
   $("imp-cancel").style.visibility = "hidden";   // resta lo spazio: "Fine" sta a destra
   $("imp-done").hidden = false;
@@ -614,11 +735,14 @@ function renderDone(chosen, result, nRules, nBacks = 0) {
   const ic = el("span", "imp-big ok");
   ic.innerHTML = CHECK_SVG;
   const n = result.added;
-  box.append(ic, el("h2", null, `${n} ${n === 1 ? "movimento importato" : "movimenti importati"}`), el("p", "secondary", periodText(imp.res.from, imp.res.to)));
+  box.append(ic, el("h2", null, !n && recs.fixed ? `${recs.fixed === 1 ? "Abbonamento aggiornato" : "Abbonamenti aggiornati"}` : `${n} ${n === 1 ? "movimento importato" : "movimenti importati"}`), el("p", "secondary", periodText(imp.res.from, imp.res.to)));
   const sum = el("ul", "card list settings");
   const kv = (a, b) => { const li = el("li", "imp-kv"); li.append(el("span", "label", a), el("b", null, String(b))); return li; };
   sum.append(kv("Entrate", chosen.filter((it) => it.kind === "entrata").length), kv("Uscite", chosen.filter((it) => it.kind === "uscita").length),
-    kv("Non importati", imp.items.length - chosen.length - nBacks));
+    kv("Non importati", imp.items.length - chosen.length - nBacks - recs.fixed));
+  if (recs.linked) sum.append(kv("Collegati agli abbonamenti", recs.linked));
+  if (recs.fixed) sum.append(kv("Addebiti di abbonamenti corretti", recs.fixed));
+  if (recs.prices) sum.append(kv("Prezzi di abbonamenti aggiornati", recs.prices));
   if (nBacks) sum.append(kv("Restituzioni di anticipi", nBacks));
   if (result.skipped) sum.append(kv("Già presenti, saltati", result.skipped));
   if (nRules) sum.append(kv("Negozi ricordati per la prossima volta", nRules));
