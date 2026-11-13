@@ -1225,11 +1225,15 @@ body.scroll-locked { position: fixed; left: 0; right: 0; overflow: hidden; }
 }
 .lock[hidden] { display: none; }
 .lock-logo { width: 84px; height: 84px; border-radius: 20px; box-shadow: 0 6px 20px rgba(0, 0, 0, .15); }
-.lock h2 { margin: 6px 0 8px; font-size: 22px; }
+.lock h2 { margin: 6px 0 0; font-size: 22px; }
+.lock-sub { margin: 0 0 10px; font-size: 15px; }
 .lock-btn {
   border: 0; border-radius: 14px; padding: 15px 26px; min-width: 240px;
   background: var(--accent); color: #fff; font-size: 17px; font-weight: 600; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
 }
+.lock-btn svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.lock-btn:active { opacity: .8; }
 .lock-out { margin-top: 18px; font-size: 15px; }
 body.is-locked { overflow: hidden; }
 /* 0.5.1: Salvadanaio, Sposta, avviso avanzo nella Dashboard */
@@ -1375,3 +1379,8 @@ body.is-locked { overflow: hidden; }
 .rec-info-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; }
 .rec-info-row + .rec-info-row { border-top: .5px solid var(--separator); }
 .rec-info-row strong { font-variant-numeric: tabular-nums; text-align: right; }
+/* 0.6.4 (IMPR-013): abbonamenti riconosciuti nell'import */
+.imp-chip.rec { background: color-mix(in srgb, #5856d6 15%, transparent); color: #4644b8; padding-left: 9px; font-weight: 500; }
+.imp-chip .fresh.rec { background: #5856d6; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .imp-chip.rec { color: #a5a4ff; } }
+:root[data-theme="dark"] .imp-chip.rec { color: #a5a4ff; }

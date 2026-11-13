@@ -5,6 +5,15 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.6.4", date: "13 novembre 2026",
+    items: [
+      "Importando l'estratto conto, Flunora riconosce gli addebiti degli abbonamenti e dei pagamenti periodici anche se arrivano qualche giorno prima o dopo: non diventano doppioni (IMPR-013)",
+      "Se l'importo sull'estratto conto è diverso, Flunora corregge l'addebito già aggiunto e ti chiede se usare il nuovo prezzo dai prossimi, con quanto cambia all'anno (IMPR-013)",
+      "Un addebito arrivato prima della data prevista viene collegato all'abbonamento, che quel mese non viene aggiunto una seconda volta (IMPR-013)",
+      "Blocco con Face ID: all'apertura non compare più il popup di conferma di Apple; tocchi \"Sblocca con Face ID\" e Face ID parte subito (IMPR-015)",
+    ],
+  },
+  {
     version: "0.6.3", date: "13 novembre 2026",
     items: [
       "Abbonamenti: per ognuno vedi quanto costa all'anno e da quando lo paghi; in alto anche il totale all'anno di tutti gli abbonamenti (IMPR-011)",
