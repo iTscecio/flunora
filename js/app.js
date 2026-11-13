@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.6.2";
+const APP_VERSION = "0.6.3";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -950,6 +950,7 @@ function openSheet(tx) {
   $("sheet-foot").hidden = !tx; // 0.5.1: Duplica ed Elimina solo in modifica
   // 0.6.0: "Ripeti" solo per i movimenti nuovi; il pannello torna quello normale
   state.editingRec = null;
+  $("rec-info").hidden = true;
   $("sheet-dup").hidden = false;
   $("sheet-pause").hidden = true;
   $("sheet-delete").textContent = "Elimina";
@@ -1859,6 +1860,8 @@ $("sheet").addEventListener("submit", async (e) => {
   refreshAfterChange(row.date);
   // 0.3.3: avviso se questa spesa avvicina o supera il budget della categoria
   budgetAlert(row, old).then((text) => { if (text) toast(text); });
+  // 0.6.3 (IMPR-012): hai cambiato l'importo di un addebito di un abbonamento? chiede se è cambiato il prezzo
+  if (wasEdit && old?.recurring_id && old.amount_cents !== row.amount_cents) askPriceChange(old.recurring_id, row.amount_cents);
   // 0.2.2: dopo lo stipendio, se quel mese non ha un budget, lo chiede
   if (!wasEdit && row.kind === "entrata" && /stipendio/i.test(catById(row.category_id)?.name || "")) {
     askBudgetAfterSalary(row);
@@ -3894,6 +3897,26 @@ async function saveNewRec(row, freq) {
   if (state.page === "abbonamenti") renderPeriodic();
 }
 
+async function askPriceChange(recId, cents) {
+  const rec = (await loadRecurring()).find((r) => r.id === recId);
+  if (!rec || !rec.active || rec.amount_cents === cents) return;
+  const diff = cents - rec.amount_cents;
+  const year = Math.abs(rec.frequency === "anno" ? diff : diff * 12);
+  actionSheet({
+    title: `Il prezzo di ${rec.description} è cambiato?`,
+    message: `Da ${fmt(rec.amount_cents)} a ${fmt(cents)}: ${diff > 0 ? "+" : "−"}${fmt(year)} all'anno.`,
+    actions: [
+      { label: `Sì, ${fmt(cents)} dai prossimi addebiti`, onClick: async () => {
+        const { error } = await sb.from("recurring").update({ amount_cents: cents }).eq("id", rec.id);
+        if (error) return toast("Errore: " + traduciErrore(error.message));
+        toast(`${rec.description}: nuovo prezzo ${fmt(cents)}`);
+        if (state.page === "abbonamenti") renderPeriodic();
+      } },
+      { label: "No, cambia solo questo addebito", onClick: () => {} },
+    ],
+  });
+}
+
 // ---------- modifica di un periodico (stesso pannello del +) ----------
 function openRecSheet(rec) {
   openSheet(null);
@@ -3918,6 +3941,21 @@ function openRecSheet(rec) {
   $("sheet-pause").textContent = rec.active ? "Sospendi" : "Riattiva";
   syncRepRow();
   setMsg($("sheet-msg"), "");
+  renderRecInfo(rec);
+}
+// IMPR-011: quanto l'hai pagato finora; IMPR-012: storia del prezzo
+function renderRecInfo(rec) {
+  const box = $("rec-info");
+  const st = state.recStats?.get(rec.id);
+  if (!st || rec.kind === "risparmio") { box.hidden = true; return; }
+  const rows = [
+    ["Lo paghi dal", `${MESI[Number(st.first.slice(5, 7)) - 1]} ${st.first.slice(0, 4)}`],
+    [`Pagato finora (${st.n} ${st.n === 1 ? "volta" : "volte"})`, fmt(st.total)],
+    ["All'anno, al prezzo di oggi", fmt(recYearly(rec))],
+    ...st.changes.slice(-3).reverse().map((c) => [`${c.to > c.from ? "Aumento" : "Riduzione"} di ${MESI[Number(c.date.slice(5, 7)) - 1]} ${c.date.slice(0, 4)}`, `${fmt(c.from)} → ${fmt(c.to)}`]),
+  ];
+  box.replaceChildren(...rows.map(([a, b]) => { const d = el("div", "rec-info-row"); d.append(el("span", null, a), el("strong", null, b)); return d; }));
+  box.hidden = rec.kind === "entrata" ? false : false;
 }
 
 async function saveRecFromSheet() {
@@ -3945,10 +3983,14 @@ async function saveRecFromSheet() {
   }
   // data o frequenza cambiate: si riparte da quella data (i mesi già fatti restano, senza doppioni)
   if (date !== rec.shownDate || freq !== rec.frequency) Object.assign(patch, { start_date: date, last_date: null });
+  const oldCents = rec.amount_cents, oldFreq = rec.frequency;
   const { error } = await sb.from("recurring").update(patch).eq("id", rec.id);
   if (error) return setMsg(msg, "Errore nel salvataggio: " + traduciErrore(error.message), true);
   closeSheet();
-  toast("Movimento periodico aggiornato");
+  const diff = amount - oldCents;
+  toast(diff && patch.is_subscription
+    ? `Prezzo ${diff > 0 ? "aumentato" : "sceso"} di ${fmt(Math.abs(diff))}: ${diff > 0 ? "+" : "−"}${fmt(Math.abs(oldFreq === "anno" ? diff : diff * 12))} all'anno`
+    : "Movimento periodico aggiornato");
   await runRecurring(true);
   renderPeriodic();
 }
@@ -3991,8 +4033,34 @@ $("per-new").addEventListener("click", () => {
   syncRepRow();
 });
 
+// 0.6.3 (IMPR-011, IMPR-012): quanto hai pagato finora e come è cambiato il prezzo,
+// dai movimenti nati da ogni periodico (recurring_id)
+const recYearly = (r) => (r.frequency === "anno" ? r.amount_cents : r.amount_cents * 12);
+async function loadRecStats() {
+  const { data, error } = await sb.from("transactions").select("date, amount_cents, recurring_id").not("recurring_id", "is", null);
+  const stats = new Map();
+  if (error) return (state.recStats = stats);
+  for (const t of [...data].sort((a, b) => a.date.localeCompare(b.date))) {
+    if (!t.recurring_id) continue;
+    const s = stats.get(t.recurring_id) || { n: 0, total: 0, first: t.date, last: null, changes: [] };
+    if (s.last && s.last.amount_cents !== t.amount_cents) s.changes.push({ date: t.date, from: s.last.amount_cents, to: t.amount_cents });
+    s.n++; s.total += t.amount_cents; s.last = t;
+    stats.set(t.recurring_id, s);
+  }
+  return (state.recStats = stats);
+}
+const monthYear = (iso) => `${MESI[Number(iso.slice(5, 7)) - 1].slice(0, 3)} ${iso.slice(0, 4)}`;
+// ultimo cambio di prezzo da mostrare (negli ultimi 6 mesi)
+function recPriceChange(r) {
+  const s = state.recStats?.get(r.id);
+  const c = s?.changes.at(-1);
+  if (!c) return null;
+  const six = isoDate(addMonths(firstOfMonth(new Date()), -6));
+  return c.date >= six ? c : null;
+}
+
 async function renderPeriodic() {
-  const recs = await loadRecurring();
+  const [recs] = await Promise.all([loadRecurring(), loadRecStats()]);
   if (!state.wishes) { const { data } = await sb.from("wishes").select("*"); state.wishes = data || []; }
   const box = $("per-groups");
   box.replaceChildren();
@@ -4008,6 +4076,8 @@ async function renderPeriodic() {
   sum_.replaceChildren(...REC_GROUPS.map((g) => [g, on.filter(g.test).reduce((a, r) => a + recMonthly(r), 0)]).filter(([, c]) => c).map(([g, c]) => {
     const d = el("div", "per-kpi " + g.id);
     d.append(el("span", "secondary small", `${g.title} al mese`), el("strong", null, fmt(c)));
+    // IMPR-011: per gli abbonamenti anche il totale all'anno
+    if (g.id === "abb") d.append(el("small", "secondary", `${fmt(on.filter(g.test).reduce((a, r) => a + recYearly(r), 0))} all'anno`));
     return d;
   }));
   const today = isoDate(new Date());
@@ -4039,6 +4109,16 @@ async function renderPeriodic() {
       if (r.trial_end && r.trial_end >= today) flags.push(`In prova fino al ${advDate(r.trial_end)}`);
       if (r.cancel_by && r.cancel_by >= today) flags.push(`Decidi entro il ${advDate(r.cancel_by)}`);
       if (flags.length && r.active) label.append(el("small", "per-flag", flags.join(" · ")));
+      // IMPR-011 e IMPR-012: costo all'anno, da quando lo paghi, ultimo cambio di prezzo
+      if (g.id === "abb") {
+        const st = state.recStats?.get(r.id);
+        const parts = [`${fmt(recYearly(r))} all'anno`];
+        if (st) parts.push(`da ${MESI[Number(st.first.slice(5, 7)) - 1]} ${st.first.slice(0, 4)}`);
+        label.append(el("small", "per-year", parts.join(" · ")));
+        const ch = recPriceChange(r);
+        if (ch) label.append(el("small", "per-price " + (ch.to > ch.from ? "up" : "down"),
+          `${ch.to > ch.from ? "↑ Aumentato" : "↓ Sceso"} da ${fmt(ch.from)} a ${fmt(ch.to)} (${monthYear(ch.date)})`));
+      }
       const sign = k === "entrata" ? "+ " : k === "risparmio" ? "" : "− ";
       li.append(label, el("span", "value per-amt" + (k === "entrata" ? " in" : ""), sign + fmt(r.amount_cents)), el("span", "chev", "›"));
       li.addEventListener("click", () => (k === "risparmio" ? openWishAuto(r.wish_id ? (wish || { id: r.wish_id, name: r.description, price_cents: 0, saved_cents: 0 }) : poolItem()) : openRecSheet(r)));

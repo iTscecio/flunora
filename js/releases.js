@@ -5,6 +5,14 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.6.3", date: "13 novembre 2026",
+    items: [
+      "Abbonamenti: per ognuno vedi quanto costa all'anno e da quando lo paghi; in alto anche il totale all'anno di tutti gli abbonamenti (IMPR-011)",
+      "Aprendo un abbonamento: quanto l'hai pagato finora, quante volte, e la storia del prezzo (IMPR-011)",
+      "Aumenti di prezzo: nella lista compare \"↑ Aumentato da … a …\"; se cambi l'importo di un addebito, Flunora ti chiede se è cambiato il prezzo dell'abbonamento e lo aggiorna per i prossimi (IMPR-012)",
+    ],
+  },
+  {
     version: "0.6.2", date: "13 novembre 2026",
     items: [
       "Abbonamenti con prova gratuita: scegli quando finisce e il primo addebito arriva quel giorno; nella lista compare \"In prova fino al …\" (IMPR-009)",

@@ -2,6 +2,11 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.6.3
+- IMPR-011 Costo all'anno: nella lista Abbonamenti "… all'anno · dal mese anno" per ogni abbonamento e il totale all'anno sotto "Abbonamenti al mese"; aprendo un periodico, riepilogo (`#rec-info`): da quando lo paghi, pagato finora e quante volte, all'anno al prezzo di oggi, ultimi cambi di prezzo. Tutto calcolato dai movimenti con `recurring_id` (`loadRecStats`), nessuna modifica a Supabase
+- IMPR-012 Aumenti di prezzo: dai movimenti collegati, l'ultimo cambio negli ultimi 6 mesi compare nella lista ("↑ Aumentato da … a …" in rosso, "↓ Sceso" in verde). Cambiando l'importo di un addebito nato da un periodico, l'app chiede se è cambiato il prezzo e, se sì, aggiorna il periodico per i prossimi addebiti; cambiando l'importo nell'abbonamento l'avviso dice di quanto cambia all'anno
+- Il riconoscimento degli aumenti dall'estratto conto importato arriva con IMPR-013 (0.6.4)
+
 ## 0.6.2
 - IMPR-009 Prova gratuita e IMPR-010 Promemoria per disdire, solo per gli abbonamenti: nel pannello (nuovo o modifica) interruttori "Prova gratuita" (con "Finisce il") e "Promemoria per disdire" (con "Decidi entro il", proposta 2 giorni prima del prossimo addebito) e "Avvisami" (1, 3 o 7 giorni prima). Con la prova il primo addebito è alla fine della prova (`start_date` = `trial_end`); spegnendo l'interruttore la data si toglie
 - Lista Abbonamenti: riga "In prova fino al …" / "Decidi entro il …"; Dashboard "In arrivo": "· fine prova" e "· decidi se disdire"
