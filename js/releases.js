@@ -5,6 +5,18 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.7.0", date: "13 novembre 2026",
+    items: [
+      "Nuova sezione Auto: la attivi in Impostazioni › Sezioni. La prima volta scegli le categorie delle spese dell'auto (Flunora propone quelle giuste e può creare Assicurazione auto, Bollo auto e Manutenzione auto)",
+      "Quanto costa l'auto: la media al mese, il totale dell'anno, il costo di ogni km e le spese per voce, anno per anno, anche quelle importate dall'estratto conto",
+      "Rifornimenti: con \"+ Rifornimento\" (o con + dalla sezione Auto) segni anche litri, km e se hai fatto il pieno; Flunora calcola il prezzo al litro e il consumo in km/l. Litri e km si aggiungono anche ai rifornimenti già presenti, toccandoli",
+      "Chilometri: quelli del contachilometri, letti dai rifornimenti o segnati con \"Aggiorna i km\"; quanti ne fai quest'anno e al mese",
+      "Scadenze dell'auto: assicurazione, bollo, revisione, tagliando (anche a km) e altre, con avviso 1, 3, 7, 15 o 30 giorni prima, nella Dashboard (\"In arrivo\") e con una notifica (nuovo tipo \"Scadenze dell'auto\")",
+      "Assicurazione e bollo diventano pagamenti periodici ogni anno: arrivano da soli e la scadenza passa all'anno dopo; se li avevi già tra gli Abbonamenti, Flunora li collega",
+      "Nella pagina Mesi i rifornimenti mostrano litri e km; il backup include tutto quello che riguarda l'auto",
+    ],
+  },
+  {
     version: "0.6.4", date: "13 novembre 2026",
     items: [
       "Importando l'estratto conto, Flunora riconosce gli addebiti degli abbonamenti e dei pagamenti periodici anche se arrivano qualche giorno prima o dopo: non diventano doppioni (IMPR-013)",

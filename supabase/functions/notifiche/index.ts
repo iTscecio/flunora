@@ -1,11 +1,12 @@
 // =========================================================
-//  Flunora 0.6.1 — funzione "notifiche" (Supabase Edge Function)
+//  Flunora 0.7.0 — funzione "notifiche" (Supabase Edge Function)
 //
 //  Ogni ora (pg_cron, script 0.6.1_notifiche.sql):
 //   1. aggiunge i movimenti periodici e il risparmio periodico arrivati a scadenza
 //      (come fa l'app all'apertura; niente doppioni);
 //   2. manda le notifiche su iPhone a chi le ha accese per quell'ora (ora di Roma):
-//      periodici di domani, inizio mese, anticipi in ritardo, backup, riepilogo dell'anno.
+//      periodici di domani, inizio mese, anticipi in ritardo, backup, riepilogo dell'anno,
+//      prove e disdette (0.6.2), scadenze dell'auto (0.7.0).
 //  Dall'app: { test: true } manda una notifica di prova ai dispositivi di chi la chiede.
 //
 //  Le chiavi delle notifiche (VAPID) le genera questa funzione la prima volta e restano
@@ -118,7 +119,9 @@ export function recNext(r: Rec, after: string | null = null): string | null {
 const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
 const eur = (c: number) => new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", useGrouping: "always" } as Intl.NumberFormatOptions).format(c / 100);
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
-const NT_DEFAULT = { hour: 9, types: { periodici: true, prove: true, mese: true, anticipi: true, backup: true, anno: true } };
+const NT_DEFAULT = { hour: 9, types: { periodici: true, prove: true, auto: true, mese: true, anticipi: true, backup: true, anno: true } };
+const giorno = (d: string) => { const [, m, dd] = d.split("-").map(Number); return `${dd} ${MESI[m - 1]}`; };
+const kmFmt = (n: number) => `${new Intl.NumberFormat("it-IT").format(n)} km`;
 const SUBJECT = "https://itscecio.github.io/flunora/";
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -218,7 +221,6 @@ export async function handler(req: Request, testDb?: any, testNow?: Date): Promi
     // 0.6.2: qualche giorno prima della fine di una prova gratuita o della data per disdire
     if (types.prove) {
       const label = (r: Rec) => r.frequency === "anno" ? "all'anno" : "al mese";
-      const giorno = (d: string) => { const [y, m, dd] = d.split("-").map(Number); return `${dd} ${MESI[m - 1]}`; };
       for (const r of ((recs || []) as Rec[]).filter((x) => x.user_id === uid && x.is_subscription)) {
         for (const [d, k] of [[r.trial_end, "trial"], [r.cancel_by, "cancel"]] as const) {
           if (!d || addDays(d, -(r.notice_days ?? 3)) !== now.date) continue;
@@ -228,6 +230,26 @@ export async function handler(req: Request, testDb?: any, testNow?: Date): Promi
             : { kind: "prove", ref: `${r.id}-cancel-${d}`, title: `${r.description}: decidi se tenerlo`,
                 body: `Entro il ${giorno(d)} scegli se disdire: costa ${eur(r.amount_cents)} ${label(r)}`, url: "./#abbonamenti" });
         }
+      }
+    }
+    // 0.7.0: scadenze dell'auto (impostazioni sincronizzate: car.deadlines), con il preavviso di ognuna.
+    // Assicurazione e bollo collegati a un pagamento periodico scadono il giorno del prossimo pagamento.
+    const car = st?.data?.car;
+    const carOn = (st?.data?.sections || []).some((x: { id: string; on: boolean }) => x.id === "auto" && x.on);
+    if (types.auto && carOn && Array.isArray(car?.deadlines)) {
+      const LONG: Record<string, string> = { assicurazione: "Assicurazione dell'auto", bollo: "Bollo dell'auto", revisione: "Revisione dell'auto", tagliando: "Tagliando dell'auto" };
+      const kms = (Array.isArray(car.km) ? car.km : []).map((k: { km: number }) => Number(k.km));
+      const { data: odo } = await db.from("transactions").select("odometer_km").eq("user_id", uid).not("odometer_km", "is", null);
+      const maxKm = Math.max(0, ...kms, ...(odo || []).map((t: { odometer_km: number }) => Number(t.odometer_km)));
+      for (const d of car.deadlines as { id: string; type: string; name?: string; date?: string; km_due?: number; notice?: number; rec_id?: string }[]) {
+        const rec = d.rec_id ? ((recs || []) as Rec[]).find((r) => r.id === d.rec_id && r.user_id === uid) : null;
+        const due = (rec && recNext(rec, rec.last_date)) || d.date;
+        if (!due || addDays(due, -(d.notice ?? 15)) !== now.date) continue;
+        const title = `${LONG[d.type] || d.name || "Scadenza"}: ${d.type === "tagliando" ? "entro" : "scade"} il ${giorno(due)}`;
+        const body = rec ? `Il pagamento di ${eur(rec.amount_cents)} arriva quel giorno`
+          : d.km_due ? `Oppure a ${kmFmt(d.km_due)}${maxKm ? `: ora sei a ${kmFmt(maxKm)}` : ""}`
+          : d.type === "revisione" ? "Prenota la revisione in tempo" : "Ricordati di pensarci in tempo";
+        out.push({ kind: "auto", ref: `${d.id}-${due}`, title, body, url: "./#auto" });
       }
     }
     if (types.mese && now.d === 1) {

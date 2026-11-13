@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.6.4";
+const APP_VERSION = "0.7.0";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -226,6 +226,7 @@ function route() {
   if (p === "anticipi") loadAdvances();
   if (p === "desideri") loadWishes();
   if (p === "abbonamenti") renderPeriodic();
+  if (p === "auto") renderCar(); // 0.7.0
 }
 window.addEventListener("hashchange", route);
 
@@ -728,7 +729,8 @@ function renderList() {
       const tipo = { entrata: "Entrata", uscita: "", investimento: "Investimento" }[tx.kind];
       grow.append(
         el("div", "title", tx.description || cat?.name || "Movimento"),
-        el("div", "sub", [tipo, cat?.name, tx.recurring_id ? "↻ periodico" : ""].filter(Boolean).join(" · "))
+        el("div", "sub", [tipo, cat?.name, tx.recurring_id ? "↻ periodico" : "",
+          tx.fuel_liters ? fmtL(tx.fuel_liters) : "", tx.odometer_km != null ? fmtKm(tx.odometer_km) : ""].filter(Boolean).join(" · ")) // 0.7.0
       );
       const amt = el("span", "amt" + (tx.kind === "entrata" ? " in" : ""),
         (tx.kind === "entrata" ? "+ " : "− ") + fmt(tx.amount_cents));
@@ -934,6 +936,7 @@ function renderChips() {
   add.type = "button";
   add.addEventListener("click", () => openCatEditor(null, state.kind, true));
   box.append(add);
+  syncCarBox(); // 0.7.0: litri e km per le categorie dell'auto
 }
 
 // data proposta: oggi se si guarda il mese corrente, altrimenti il 1° del mese mostrato
@@ -988,6 +991,10 @@ function openSheet(tx) {
   }
   resetAdvFields();
   syncRepRow();
+  // 0.7.0: dati dell'auto; dalla sezione Auto il + parte da un rifornimento
+  fillCarBox(tx);
+  if (!tx && state.page === "auto" && fuelCat() && state.kind === "uscita") { state.categoryId = fuelCat(); renderChips(); $("sheet-title").textContent = "Rifornimento"; }
+  syncCarBox();
   // 0.2.1: niente cursore automatico, la tastiera si apre solo toccando un campo
 }
 
@@ -1840,6 +1847,7 @@ $("sheet").addEventListener("submit", async (e) => {
     date: $("f-date").value,
     description: $("f-desc").value.trim() || null,
   };
+  if (!repeat && !carFields(row)) return; // 0.7.0: litri, pieno e km
   if (repeat) return saveNewRec(row, repeat); // 0.6.0: nuovo movimento periodico
   const save = $("sheet-save");
   save.disabled = true;
@@ -1850,7 +1858,11 @@ $("sheet").addEventListener("submit", async (e) => {
     : await sb.from("transactions").insert(row).select().maybeSingle();
   if (!error && state.wishBuying) state.wishBuying.txId = saved?.id || null;
   save.disabled = false;
-  if (error) { setMsg(msg, "Errore nel salvataggio: " + traduciErrore(error.message), true); return; }
+  if (error) {
+    setMsg(msg, /fuel_liters|odometer_km|fuel_full/i.test(error.message) ? "Per litri e km prima esegui lo script della 0.7.0 in Supabase."
+      : "Errore nel salvataggio: " + traduciErrore(error.message), true);
+    return;
+  }
 
   state.lastCategory[row.kind] = row.category_id;
   const buying = state.wishBuying; // 0.5.0: acquisto di un desiderio
@@ -1891,6 +1903,12 @@ $("sheet-delete").addEventListener("click", async () => {
   if (!tx) return;
   closeSheet();
   if (state.page === "mesi") await deleteTransactions([tx]);
+  else if (state.page === "auto") { // 0.7.0: un rifornimento aperto dalla sezione Auto
+    const { error } = await sb.from("transactions").delete().eq("id", tx.id);
+    if (error) return toast("Errore: " + traduciErrore(error.message));
+    toast("Movimento eliminato");
+    renderCar();
+  }
 });
 
 // dopo un salvataggio aggiorna la pagina aperta (in "Mesi" si sposta sul mese del movimento)
@@ -1903,6 +1921,7 @@ function refreshAfterChange(dateStr) {
     return loadMonth();
   }
   if (state.page === "dashboard") loadDashboard();
+  if (state.page === "auto") renderCar(); // 0.7.0
 }
 
 // =========================================================
@@ -1921,7 +1940,7 @@ const SECTIONS = {
   dashboard:   { name: "Dashboard",   color: "#007aff" },
   mesi:        { name: "Mesi",        color: "#34c759" },
   abbonamenti: { name: "Abbonamenti", color: "#ff2d55" }, // 0.6.0: abbonamenti e periodici
-  auto:        { name: "Auto",        color: "#ff9500", placeholder: true },
+  auto:        { name: "Auto",        color: "#ff9500" }, // 0.7.0: spese, rifornimenti, km e scadenze
   anticipi:    { name: "Anticipi",    color: "#af52de" },
   desideri:    { name: "Desideri",    color: "#30b0c7" },
 };
@@ -3172,7 +3191,8 @@ async function buildBackup() {
         name: w.name, price_cents: w.price_cents, saved_cents: w.saved_cents, due_date: w.due_date, link: w.link,
         note: w.note, sort_order: w.sort_order, status: w.status, closed_on: w.closed_on,
       })),
-      settings: { sections: sections || state.sections, budget_cents, opening, backup_reminder_days, wish_pool_cents: state.settingsData.wish_pool_cents || 0 },
+      settings: { sections: sections || state.sections, budget_cents, opening, backup_reminder_days, wish_pool_cents: state.settingsData.wish_pool_cents || 0,
+        car: carForBackup(recurring) }, // 0.7.0
     },
   };
 }
@@ -3509,7 +3529,7 @@ async function runRestore() {
     if (r.mode === "replace") {
       state.settingsData = { ...bs, ...keep };
     } else {
-      for (const k of ["budget_cents", "opening", "backup_reminder_days", "wish_pool_cents"]) {
+      for (const k of ["budget_cents", "opening", "backup_reminder_days", "wish_pool_cents", "car"]) {
         if (state.settingsData[k] == null && bs[k] != null) state.settingsData[k] = bs[k];
       }
     }
@@ -3520,6 +3540,7 @@ async function runRestore() {
     $("backup").classList.remove("open");
     $("settings").classList.remove("open");
     await loadCategories();
+    await remapCarAfterRestore(); // 0.7.0: categorie e pagamenti dell'auto ritrovati per nome
     renderTabbar();
     route();
     const n = res?.transactions_added ?? 0, skip = res?.transactions_skipped ?? 0;
@@ -4140,13 +4161,19 @@ async function renderUpcoming() {
       r.cancel_by ? { r, d: r.cancel_by, note: "decidi se disdire" } : null,
     ].filter(Boolean)))
     .filter((x) => x.d && x.d > today && x.d <= lim && !(x.note === undefined && x.r.trial_end === x.d))
+    .concat(carUpcoming(7)) // 0.7.0: scadenze dell'auto (revisione, tagliando…), dentro il loro preavviso
     .sort((a, b) => a.d.localeCompare(b.d)).slice(0, 5);
   $("upcoming").hidden = !items.length;
   const tomorrow = isoDate(new Date(Date.now() + 864e5));
-  $("up-list").replaceChildren(...items.map(({ r, d, note }) => {
+  $("up-list").replaceChildren(...items.map(({ r, d, note, dl }) => {
     const li = el("li");
     const sd = shortDay(d);
     const when = el("span", "up-when", d === tomorrow ? "Domani" : sd[0].toUpperCase() + sd.slice(1));
+    if (dl) { // 0.7.0
+      li.append(when, el("span", "up-name up-note", `${dlName(dl)} · ${dl.type === "tagliando" ? "da fare" : "scade"}`), el("span", "up-amt up-car", "Auto"));
+      li.addEventListener("click", () => { location.hash = "#auto"; });
+      return li;
+    }
     const name = r.kind === "risparmio" ? `Risparmio · ${r.wish_id ? r.description : POOL_NAME}` : note ? `${r.description} · ${note}` : r.description;
     const sign = r.kind === "entrata" ? "+ " : r.kind === "risparmio" ? "" : "− ";
     li.append(when, el("span", "up-name" + (note ? " up-note" : ""), name), el("span", "up-amt" + (r.kind === "entrata" ? " in" : ""), sign + fmt(r.amount_cents)));
@@ -4289,6 +4316,7 @@ $("wauto-stop").addEventListener("click", async () => {
 const NT_TYPES = [
   { id: "periodici", name: "Periodici in arrivo", sub: "Il giorno prima: abbonamenti, pagamenti, entrate, risparmio", color: "#ff2d55" },
   { id: "prove", name: "Prove e disdette", sub: "Prima che finisca una prova gratuita o scada la data per disdire", color: "#ff9500" },
+  { id: "auto", name: "Scadenze dell'auto", sub: "Prima di assicurazione, bollo, revisione e tagliando, quando vuoi tu", color: "#ff6b00", needs: "auto" }, // 0.7.0
   { id: "mese", name: "Inizio mese", sub: "Il 1°: recap del mese passato e avanzo del budget", color: "#34c759" },
   { id: "anticipi", name: "Anticipi in ritardo", sub: "Quote non restituite dopo 30 giorni", color: "#007aff" },
   { id: "backup", name: "Promemoria backup", sub: "Quando è ora del backup, come in Impostazioni › Backup", color: "#30b0c7" },
@@ -4354,7 +4382,7 @@ async function renderNotify() {
   $("nt-enable").textContent = btn;
   $("nt-enable").classList.toggle("ghost", st === "on");
   // tipi
-  $("nt-types").replaceChildren(...NT_TYPES.map((t) => {
+  $("nt-types").replaceChildren(...NT_TYPES.filter((t) => !t.needs || state.sections.some((x) => x.id === t.needs && x.on)).map((t) => {
     const li = el("li");
     const ico = el("span", "ico"); ico.style.setProperty("--c", t.color);
     ico.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></svg>';
@@ -4412,6 +4440,16 @@ async function upcomingNotifs() {
           ? { when: at(notice), title: `La prova di ${r.description} sta finendo`, body: `Finisce il ${advDate(d)}: poi ${fmt(r.amount_cents)} ${r.frequency === "anno" ? "all'anno" : "al mese"}. Se non ti serve, disdici prima` }
           : { when: at(notice), title: `${r.description}: decidi se tenerlo`, body: `Entro il ${advDate(d)} scegli se disdire: costa ${fmt(r.amount_cents)} ${r.frequency === "anno" ? "all'anno" : "al mese"}` });
       }
+    }
+  }
+  // 0.7.0: scadenze dell'auto, con il preavviso scelto per ognuna
+  if (c.types.auto && carOn()) {
+    await loadRecurring();
+    for (const d of carCfg()?.deadlines || []) {
+      const due = dlDue(d);
+      if (!due) continue;
+      const notice = isoDate(new Date(Date.parse(due + "T12:00") - (d.notice ?? 15) * 864e5));
+      out.push({ when: at(notice), ...carNotifText(d, due) });
     }
   }
   if (c.types.mese) {
@@ -4776,6 +4814,687 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) { hiddenAt = Date.now(); return; }
   if (state.user && lockCfg() && hiddenAt && Date.now() - hiddenAt > LOCK_AFTER_MS) showLock();
 });
+
+// =========================================================
+// 0.7.0 — AUTO
+// Una sola auto. Nome, targa, categorie, scadenze e letture dei km stanno nelle
+// impostazioni sincronizzate (settingsData.car); le spese sono i movimenti delle
+// categorie dell'auto, con litri, pieno e km sui movimenti stessi (script 0.7.0).
+// Assicurazione e bollo possono essere collegati a un pagamento periodico annuale:
+// la scadenza è la prossima data del periodico e si rinnova quando arriva il pagamento.
+// =========================================================
+const carOn = () => state.sections.some((x) => x.id === "auto" && x.on);
+const carCfg = () => state.settingsData?.car || null;
+const carCats = () => (carCfg()?.cats || []).filter((id) => catById(id));
+const fuelCat = () => { const f = carCfg()?.fuel; return f && carCats().includes(f) ? f : null; };
+let nfKm; // come per gli euro: il punto anche nelle migliaia a 4 cifre (1.190 km)
+try { nfKm = new Intl.NumberFormat("it-IT", { useGrouping: "always" }); } catch { nfKm = new Intl.NumberFormat("it-IT"); }
+const nfL = new Intl.NumberFormat("it-IT", { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+const fmtKm = (km) => `${nfKm.format(km)} km`;
+const fmtL = (l) => `${nfL.format(Number(l))} l`;
+const fmtPerL = (cents, l) => `${new Intl.NumberFormat("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(cents / 100 / l)} €/l`;
+const parseKm = (t) => { const s = String(t || "").replace(/[\s.km]/gi, ""); if (!s) return null; const n = Number(s); return Number.isInteger(n) && n >= 0 && n <= 3000000 ? n : NaN; };
+const parseLiters = (t) => { const s = String(t || "").trim().replace(/\s|l$/gi, "").replace(",", "."); if (!s) return null; const n = Number(s); return Number.isFinite(n) && n > 0 && n < 1000 ? Math.round(n * 100) / 100 : NaN; };
+const daysTo = (iso) => Math.round((Date.parse(iso + "T12:00") - Date.parse(isoDate(new Date()) + "T12:00")) / 864e5);
+const longDay = (iso) => new Date(iso + "T12:00").toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" });
+
+// categorie proposte la prima volta (riconosciute dal nome) e quelle che Flunora può creare
+const CAR_NAME_RE = /benzin|carbur|gasolio|diesel|gpl|metano|rifornim|\bauto\b|assicura|parchegg|pedagg|autostrad|meccanic|officina|gomm|tagliand|revision|autolavag|multa/i;
+const FUEL_RE = /benzin|carbur|gasolio|diesel|gpl|metano|rifornim|ricarica/i;
+const CAR_SUGGEST = [
+  { name: "Assicurazione auto", icon: "umbrella", color: "#5856d6", re: /assicura/i },
+  { name: "Bollo auto", icon: "doc", color: "#a2845e", re: /bollo auto|tassa auto/i },
+  { name: "Manutenzione auto", icon: "tool", color: "#ff3b30", re: /manutenz|meccanic|officina|tagliand/i },
+];
+// tipi di scadenza: ogni quanti mesi si rinnova, se può essere un pagamento ogni anno
+const DL_TYPES = {
+  assicurazione: { name: "Assicurazione", long: "Assicurazione dell'auto", every: 12, pay: true, re: /assicura/i, icon: "umbrella", color: "#5856d6" },
+  bollo:         { name: "Bollo", long: "Bollo dell'auto", every: 12, pay: true, re: /bollo/i, icon: "doc", color: "#a2845e" },
+  revisione:     { name: "Revisione", long: "Revisione dell'auto", every: 24, icon: "car", color: "#ff9500" },
+  tagliando:     { name: "Tagliando", long: "Tagliando dell'auto", every: 12, km: true, icon: "tool", color: "#ff3b30" },
+  altro:         { name: "Altro", long: "", every: 12, icon: "star", color: "#8e8e93" },
+};
+const dlName = (d) => (d.type === "altro" ? d.name || "Scadenza" : DL_TYPES[d.type]?.name || "Scadenza");
+const dlRec = (d) => (d.rec_id ? (state.recurring || []).find((r) => r.id === d.rec_id && r.active) : null);
+// data della scadenza: per assicurazione e bollo collegati, il prossimo pagamento
+const dlDue = (d) => { const r = dlRec(d); return (r && recNext(r, r.last_date)) || d.date || null; };
+
+function saveCar(patch, message = "Auto salvata solo su questo dispositivo") {
+  state.settingsData.car = { ...(carCfg() || {}), ...patch };
+  return saveSettingsData(message);
+}
+
+// tutte le letture dei km: quelle segnate a mano e quelle dei movimenti, in ordine
+function kmReadings() {
+  const manual = (carCfg()?.km || []).map((k) => ({ date: k.date, km: k.km }));
+  const fromTx = (state.carTx || []).filter((t) => t.odometer_km != null).map((t) => ({ date: t.date, km: t.odometer_km }));
+  return [...manual, ...fromTx].sort((a, b) => a.date.localeCompare(b.date) || a.km - b.km);
+}
+const lastKm = () => kmReadings().at(-1) || null;
+
+// consumo dal pieno al pieno: km tra due pieni / litri messi dopo il primo (fino al secondo compreso)
+function fuelSegments(list = state.carTx || []) {
+  const f = fuelCat();
+  const fuel = list.filter((t) => t.category_id === f && t.fuel_liters).sort((a, b) => a.date.localeCompare(b.date) || (a.odometer_km || 0) - (b.odometer_km || 0));
+  const segs = [];
+  let prevFull = null, liters = 0;
+  for (const t of fuel) {
+    if (prevFull) liters += Number(t.fuel_liters);
+    if (t.fuel_full !== false && t.odometer_km != null) {
+      if (prevFull && t.odometer_km > prevFull.odometer_km && liters > 0) {
+        segs.push({ tx: t, km: t.odometer_km - prevFull.odometer_km, liters, kml: (t.odometer_km - prevFull.odometer_km) / liters });
+      }
+      prevFull = t; liters = 0;
+    }
+  }
+  return segs;
+}
+
+// ---------- la pagina ----------
+async function renderCar() {
+  const ready = carCats().length > 0;
+  $("car-setup").hidden = ready;
+  $("car-body").hidden = !ready;
+  $("car-fuel-new").hidden = !ready || !fuelCat();
+  if (!ready) return;
+  const cats = carCats();
+  const [{ data, error }] = await Promise.all([
+    sb.from("transactions").select("*").in("category_id", cats).order("date", { ascending: true }),
+    loadRecurring(),
+  ]);
+  state.carTx = error ? [] : data.filter((t) => t.kind === "uscita").sort((a, b) => a.date.localeCompare(b.date));
+  state.carYear = state.carYear || new Date().getFullYear();
+  renderCarHero();
+  renderCarDeadlines();
+  renderCarFuel();
+  renderCarKm();
+  renderCarCats();
+}
+
+function carSpent(from, to) { // da `from` (compreso) a `to` (escluso)
+  return (state.carTx || []).filter((t) => t.date >= from && (!to || t.date < to)).reduce((a, t) => a + t.amount_cents, 0);
+}
+
+// costo al km negli ultimi 12 mesi, se ci sono abbastanza letture dei km
+function carPerKm() {
+  const from = isoDate(new Date(Date.now() - 365 * 864e5));
+  const rs = kmReadings().filter((r) => r.date >= from);
+  if (rs.length < 2) return null;
+  const a = rs[0], b = rs.at(-1);
+  const days = (Date.parse(b.date) - Date.parse(a.date)) / 864e5;
+  if (b.km <= a.km || days < 28) return null;
+  const spent = (state.carTx || []).filter((t) => t.date > a.date && t.date <= b.date).reduce((s, t) => s + t.amount_cents, 0);
+  return { cents: spent / (b.km - a.km), kmMonth: (b.km - a.km) / (days / 30.44) };
+}
+
+function renderCarHero() {
+  const cfg = carCfg() || {};
+  $("car-name").textContent = cfg.name || "La tua auto";
+  $("car-plate").hidden = !cfg.plate;
+  $("car-plate").textContent = cfg.plate || "";
+  const now = new Date();
+  const tx = state.carTx || [];
+  // media degli ultimi 12 mesi (meno, se le spese dell'auto sono iniziate da poco)
+  const from = addMonths(firstOfMonth(now), -11);
+  const first = tx[0]?.date ? firstOfMonth(new Date(tx[0].date + "T12:00")) : now;
+  const start = first > from ? first : from;
+  const months = Math.max(1, (now.getFullYear() - start.getFullYear()) * 12 + now.getMonth() - start.getMonth() + 1);
+  const avg = Math.round(carSpent(isoDate(start)) / months);
+  $("car-month").textContent = fmt(avg);
+  const parts = [`Quest'anno ${fmt(carSpent(`${now.getFullYear()}-01-01`))}`];
+  const pk = carPerKm();
+  if (pk) parts.push(`${(pk.cents / 100).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € al km`);
+  $("car-sub").textContent = parts.join(" · ");
+}
+
+function dlRow(d) {
+  const t = DL_TYPES[d.type] || DL_TYPES.altro;
+  const due = dlDue(d);
+  const li = el("li", "tap car-dl-row");
+  const ico = el("span", "ico");
+  ico.style.setProperty("--c", t.color);
+  ico.innerHTML = iconSvg(t.icon);
+  const label = el("span", "label");
+  const sub = el("small");
+  const n = due ? daysTo(due) : null;
+  sub.append(due ? advDate(due) + (due.slice(0, 4) !== String(new Date().getFullYear()) ? " " + due.slice(0, 4) : "") : "Nessuna data");
+  if (d.km_due) sub.append(` · o a ${fmtKm(d.km_due)}`);
+  label.append(el("span", null, dlName(d)), sub);
+  const r = dlRec(d);
+  if (r) label.append(el("small", "car-dl-pay", `↻ ${fmt(r.amount_cents)} ogni anno, arriva da solo`));
+  const lk = lastKm();
+  const kmLeft = d.km_due && lk ? d.km_due - lk.km : null;
+  let badge = null;
+  if (n !== null && n < 0) badge = ["late", `scaduta da ${-n} ${-n === 1 ? "giorno" : "giorni"}`];
+  else if (n === 0) badge = ["late", "oggi"];
+  else if (kmLeft !== null && kmLeft <= 0) badge = ["late", "km raggiunti"];
+  else if (n !== null && n <= Math.max(d.notice ?? 15, 7)) badge = ["soon", n === 1 ? "domani" : `tra ${n} giorni`];
+  else if (kmLeft !== null && kmLeft <= 1000) badge = ["soon", `mancano ${fmtKm(kmLeft)}`];
+  else if (n !== null) badge = ["", n < 60 ? `tra ${n} giorni` : `tra ${Math.round(n / 30.44)} mesi`];
+  li.append(ico, label);
+  if (badge) li.append(el("span", "car-days " + badge[0], badge[1]));
+  li.append(el("span", "chev", "›"));
+  li.addEventListener("click", () => openDlSheet(d));
+  return li;
+}
+
+function renderCarDeadlines() {
+  const list = (carCfg()?.deadlines || []).slice().sort((a, b) => (dlDue(a) || "9999").localeCompare(dlDue(b) || "9999"));
+  const ul = $("car-dl");
+  ul.hidden = !list.length;
+  ul.replaceChildren(...list.map(dlRow));
+  // tipi non ancora usati, da aggiungere con un tocco
+  const used = new Set(list.map((d) => d.type));
+  const free = ["assicurazione", "bollo", "revisione", "tagliando"].filter((k) => !used.has(k));
+  const box = $("car-dl-suggest");
+  box.hidden = !free.length;
+  box.replaceChildren(...free.map((k) => {
+    const b = el("button", "chip", "+ " + DL_TYPES[k].name);
+    b.type = "button";
+    b.addEventListener("click", () => openDlSheet(null, k));
+    return b;
+  }));
+}
+
+function renderCarFuel() {
+  const f = fuelCat();
+  const fuel = (state.carTx || []).filter((t) => t.category_id === f);
+  const segs = fuelSegments();
+  const year = isoDate(new Date(Date.now() - 365 * 864e5));
+  const withL = fuel.filter((t) => t.fuel_liters && t.date >= year);
+  const liters = withL.reduce((a, t) => a + Number(t.fuel_liters), 0);
+  const kpis = [];
+  if (segs.length) {
+    const km = segs.reduce((a, s) => a + s.km, 0), l = segs.reduce((a, s) => a + s.liters, 0);
+    kpis.push(["Consumo medio", `${nfL.format(Math.round((km / l) * 10) / 10)} km/l`, `${nfL.format(Math.round((l / km) * 1000) / 10)} l ogni 100 km`]);
+  }
+  if (liters) kpis.push(["Prezzo medio", fmtPerL(withL.reduce((a, t) => a + t.amount_cents, 0), liters), "negli ultimi 12 mesi"]);
+  const y = new Date().getFullYear();
+  const yFuel = fuel.filter((t) => t.date >= `${y}-01-01`);
+  if (yFuel.length) kpis.push(["Quest'anno", fmt(yFuel.reduce((a, t) => a + t.amount_cents, 0)), `${yFuel.length} ${yFuel.length === 1 ? "rifornimento" : "rifornimenti"}`]);
+  $("car-fuel-kpis").hidden = !kpis.length;
+  $("car-fuel-kpis").replaceChildren(...kpis.map(([a, b, c]) => {
+    const d = el("div", "car-kpi");
+    d.append(el("span", "secondary small", a), el("strong", null, b), el("small", "secondary", c));
+    return d;
+  }));
+  const last = fuel.slice().sort((a, b) => b.date.localeCompare(a.date) || (b.odometer_km || 0) - (a.odometer_km || 0)).slice(0, 5);
+  $("car-fuel-empty").hidden = !!fuel.length;
+  $("car-fuel-list").hidden = !last.length;
+  $("car-fuel-list").replaceChildren(...last.map((t) => {
+    const li = el("li", "tap");
+    const grow = el("div", "grow");
+    const sd = shortDay(t.date);
+    const info = [];
+    if (t.fuel_liters) info.push(fmtL(t.fuel_liters), fmtPerL(t.amount_cents, Number(t.fuel_liters)));
+    if (t.odometer_km != null) info.push(fmtKm(t.odometer_km));
+    if (t.fuel_liters && t.fuel_full === false) info.push("non pieno");
+    grow.append(el("div", "title", sd[0].toUpperCase() + sd.slice(1)), el("div", "sub" + (info.length ? "" : " car-missing"), info.length ? info.join(" · ") : "Tocca per aggiungere litri e km"));
+    const right = el("div", "car-fuel-right");
+    right.append(el("span", "amt", "− " + fmt(t.amount_cents)));
+    const s = segs.find((x) => x.tx.id === t.id);
+    if (s) right.append(el("small", "car-kml", `${nfL.format(Math.round(s.kml * 10) / 10)} km/l`));
+    li.append(grow, right);
+    li.addEventListener("click", () => openSheet(t));
+    return li;
+  }));
+}
+
+function renderCarKm() {
+  const box = $("car-km");
+  const rs = kmReadings();
+  if (!rs.length) {
+    box.replaceChildren(el("p", "secondary small car-km-empty", "Segna i km del contachilometri quando fai rifornimento, oppure con \"Aggiorna i km\": Flunora calcola quanti ne fai al mese e quanto ti costa ogni km."));
+    return;
+  }
+  const last = rs.at(-1);
+  const y = new Date().getFullYear();
+  const before = rs.filter((r) => r.date < `${y}-01-01`).at(-1) || rs.find((r) => r.date >= `${y}-01-01`);
+  const thisYear = before && last.km > before.km ? last.km - before.km : 0;
+  const pk = carPerKm();
+  const head = el("div", "car-km-head");
+  const t = el("div");
+  t.append(el("span", "secondary small", "Contachilometri"), el("strong", "car-km-big", fmtKm(last.km)));
+  head.append(t, el("span", "secondary small", `al ${advDate(last.date)}`));
+  const grid = el("div", "car-kpis");
+  const items = [["Quest'anno", thisYear ? fmtKm(thisYear) : "—", thisYear ? `dal ${before.date < `${y}-01-01` ? "1° gennaio" : advDate(before.date)}` : "servono almeno due letture"]];
+  if (pk) {
+    items.push(["Al mese", `${fmtKm(Math.round(pk.kmMonth / 10) * 10)}`, "media degli ultimi 12 mesi"]);
+    items.push(["Ogni km", `${(pk.cents / 100).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`, "tutte le spese dell'auto"]);
+  }
+  grid.replaceChildren(...items.map(([a, b, c]) => {
+    const d = el("div", "car-kpi");
+    d.append(el("span", "secondary small", a), el("strong", null, b), el("small", "secondary", c));
+    return d;
+  }));
+  box.replaceChildren(head, grid);
+}
+
+function renderCarCats() {
+  const y = state.carYear;
+  $("car-year").textContent = String(y);
+  $("car-year-next").disabled = y >= new Date().getFullYear();
+  const tx = (state.carTx || []).filter((t) => t.date.startsWith(String(y)));
+  const total = tx.reduce((a, t) => a + t.amount_cents, 0);
+  const by = new Map();
+  for (const t of tx) { const x = by.get(t.category_id) || { cents: 0, n: 0 }; x.cents += t.amount_cents; x.n++; by.set(t.category_id, x); }
+  const box = $("car-cats");
+  if (!total) { box.replaceChildren(el("p", "secondary small", `Nessuna spesa dell'auto nel ${y}.`)); return; }
+  const rows = [...by].sort((a, b) => b[1].cents - a[1].cents).map(([id, x]) => {
+    const c = catById(id);
+    const row = el("div", "yr-cat");
+    const head = el("div", "yr-cat-head");
+    head.append(catIcon(c, "sm"), el("span", null, c?.name || "Altro"), el("small", "secondary", `${Math.round((x.cents / total) * 100)}%`), el("strong", null, fmt(x.cents)));
+    const bar = el("div", "yr-bar");
+    const i = el("i");
+    i.style.width = `${Math.max(2, (x.cents / total) * 100)}%`;
+    i.style.background = c?.color || "#8e8e93";
+    bar.append(i);
+    row.append(head, bar, el("small", "secondary", `${x.n} ${x.n === 1 ? "movimento" : "movimenti"}`));
+    return row;
+  });
+  const tot = el("div", "car-cats-tot");
+  const months = y === new Date().getFullYear() ? new Date().getMonth() + 1 : 12;
+  tot.append(el("span", null, `Totale ${y}`), el("strong", null, fmt(total)), el("small", "secondary", `${fmt(Math.round(total / months))} al mese`));
+  box.replaceChildren(...rows, tot);
+}
+$("car-year-prev").addEventListener("click", () => { state.carYear--; renderCarCats(); });
+$("car-year-next").addEventListener("click", () => { if (state.carYear < new Date().getFullYear()) { state.carYear++; renderCarCats(); } });
+
+// ---------- la tua auto: nome, targa, categorie ----------
+function openTopSheet(id) {
+  $(id).scrollTop = 0;
+  $(id).classList.add("open");
+  $(id).setAttribute("aria-hidden", "false");
+  $(id.replace("-sheet", "-backdrop")).classList.add("open");
+}
+function closeTopSheet(id) {
+  $(id).classList.remove("open");
+  $(id).setAttribute("aria-hidden", "true");
+  $(id.replace("-sheet", "-backdrop")).classList.remove("open");
+  document.activeElement?.blur();
+}
+
+function openCarSheet() {
+  const cfg = carCfg();
+  const usc = state.categories.filter((c) => c.kind === "uscita");
+  const cats = new Set(cfg?.cats?.length ? carCats() : usc.filter((c) => !c.archived && CAR_NAME_RE.test(c.name)).map((c) => c.id));
+  state.carEdit = { cats, fuel: cfg?.fuel || usc.find((c) => cats.has(c.id) && FUEL_RE.test(c.name))?.id || null, first: !cfg?.cats?.length };
+  $("car-f-name").value = cfg?.name || "";
+  $("car-f-plate").value = cfg?.plate || "";
+  setMsg($("car-msg"), "");
+  renderCarSheet();
+  openTopSheet("car-sheet");
+}
+function renderCarSheet() {
+  const e = state.carEdit;
+  const usc = state.categories.filter((c) => c.kind === "uscita" && (!c.archived || e.cats.has(c.id)));
+  $("car-cat-list").replaceChildren(...usc.map((c) => {
+    const li = el("li");
+    const label = el("span", "label", c.name);
+    const sw = el("label", "switch");
+    const input = document.createElement("input");
+    input.type = "checkbox"; input.checked = e.cats.has(c.id);
+    input.setAttribute("aria-label", c.name);
+    input.addEventListener("change", () => {
+      if (input.checked) e.cats.add(c.id); else e.cats.delete(c.id);
+      if (input.checked && !e.fuel && FUEL_RE.test(c.name)) e.fuel = c.id;
+      renderCarFuelSelect();
+    });
+    sw.append(input, el("span"));
+    li.append(catIcon(c), label, sw);
+    return li;
+  }));
+  const missing = CAR_SUGGEST.filter((s) => !state.categories.some((c) => c.kind === "uscita" && s.re.test(c.name)));
+  $("car-add-cats").hidden = !missing.length;
+  $("car-add-cats").textContent = `+ Crea ${missing.map((s) => s.name).join(", ").replace(/, ([^,]*)$/, " e $1")}`;
+  renderCarFuelSelect();
+}
+function renderCarFuelSelect() {
+  const e = state.carEdit;
+  const sel = $("car-f-fuel");
+  const list = state.categories.filter((c) => e.cats.has(c.id));
+  if (e.fuel && !e.cats.has(e.fuel)) e.fuel = null;
+  sel.replaceChildren(new Option("Nessuna", ""), ...list.map((c) => new Option(c.name, c.id)));
+  sel.value = e.fuel || "";
+}
+$("car-f-fuel").addEventListener("change", () => { state.carEdit.fuel = $("car-f-fuel").value || null; });
+$("car-add-cats").addEventListener("click", async () => {
+  const missing = CAR_SUGGEST.filter((s) => !state.categories.some((c) => c.kind === "uscita" && s.re.test(c.name)));
+  let order = Math.max(0, ...state.categories.filter((c) => c.kind === "uscita").map((c) => c.sort_order || 0));
+  for (const s of missing) {
+    const { data, error } = await sb.from("categories").insert({ name: s.name, kind: "uscita", icon: s.icon, color: s.color, sort_order: ++order }).select().single();
+    if (error) return setMsg($("car-msg"), "Errore: " + traduciErrore(error.message), true);
+    state.carEdit.cats.add(data.id);
+  }
+  await loadCategories();
+  afterCategoriesChanged();
+  renderCarSheet();
+  setMsg($("car-msg"), missing.length === 1 ? "Categoria creata" : "Categorie create");
+});
+$("car-cancel").addEventListener("click", () => closeTopSheet("car-sheet"));
+$("car-backdrop").addEventListener("click", () => closeTopSheet("car-sheet"));
+$("car-name-btn").addEventListener("click", openCarSheet);
+$("car-setup-go").addEventListener("click", openCarSheet);
+$("car-sheet").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const e = state.carEdit;
+  const cats = state.categories.filter((c) => e.cats.has(c.id)).map((c) => c.id);
+  if (!cats.length) return setMsg($("car-msg"), "Scegli almeno una categoria.", true);
+  const patch = { name: $("car-f-name").value.trim(), plate: $("car-f-plate").value.trim().toUpperCase(), cats, fuel: e.fuel && cats.includes(e.fuel) ? e.fuel : null };
+  // la prima volta: assicurazione e bollo che sono già pagamenti periodici annuali diventano scadenze
+  if (e.first) {
+    const recs = (await loadRecurring()).filter((r) => r.active && r.kind === "uscita" && r.frequency === "anno");
+    const dls = [...(carCfg()?.deadlines || [])];
+    for (const k of ["assicurazione", "bollo"]) {
+      if (dls.some((d) => d.type === k)) continue;
+      const r = recs.find((x) => DL_TYPES[k].re.test(x.description) && (k !== "bollo" || cats.includes(x.category_id) || /auto/i.test(x.description)));
+      if (r) dls.push({ id: "d" + Date.now().toString(36) + k, type: k, rec_id: r.id, date: recNext(r, r.last_date), notice: 15 });
+    }
+    patch.deadlines = dls;
+  }
+  await saveCar(patch);
+  closeTopSheet("car-sheet");
+  toast(e.first ? "Sezione Auto pronta" : "Auto aggiornata");
+  renderCar();
+});
+
+// ---------- scadenze ----------
+let dlEdit = null;
+// categoria del pagamento: quella dell'auto con il nome giusto; se manca la crea (es. "Bollo auto")
+async function catForDl(type) {
+  const re = DL_TYPES[type]?.re;
+  const cats = carCats().map(catById);
+  const found = re && cats.find((c) => re.test(c.name));
+  if (found) return found;
+  const sug = CAR_SUGGEST.find((x) => re && re.test(x.name));
+  if (sug) {
+    const order = Math.max(0, ...state.categories.filter((c) => c.kind === "uscita").map((c) => c.sort_order || 0)) + 1;
+    const { data, error } = await sb.from("categories").insert({ name: sug.name, kind: "uscita", icon: sug.icon, color: sug.color, sort_order: order }).select().single();
+    if (!error && data) {
+      await loadCategories();
+      afterCategoriesChanged();
+      await saveCar({ cats: [...carCats(), data.id] });
+      return catById(data.id) || data;
+    }
+  }
+  return cats.find((c) => c.id !== fuelCat()) || cats[0] || null;
+}
+function openDlSheet(d = null, type = null) {
+  dlEdit = { d, type: d?.type || type || "assicurazione", rec: d ? dlRec(d) : null };
+  // nuova assicurazione o bollo: se c'è già un pagamento periodico annuale con quel nome, si collega
+  if (!d) dlEdit.rec = findDlRec(dlEdit.type);
+  $("cardl-title").textContent = d ? dlName(d) : "Nuova scadenza";
+  $("cardl-name").value = d?.name || "";
+  $("cardl-date").value = d ? dlDue(d) || "" : dlEdit.rec ? recNext(dlEdit.rec, dlEdit.rec.last_date) : "";
+  $("cardl-km").value = d?.km_due ? nfKm.format(d.km_due) : "";
+  $("cardl-notice").value = String(d?.notice ?? 15);
+  $("cardl-rep").checked = d ? !!dlEdit.rec : true;
+  $("cardl-amount").value = dlEdit.rec ? fmtPlain(dlEdit.rec.amount_cents) : "";
+  $("cardl-foot").hidden = !d;
+  setMsg($("cardl-msg"), "");
+  renderDlSheet();
+  openTopSheet("cardl-sheet");
+}
+function findDlRec(type) {
+  const t = DL_TYPES[type];
+  if (!t?.pay) return null;
+  const used = new Set((carCfg()?.deadlines || []).map((x) => x.rec_id).filter(Boolean));
+  return (state.recurring || []).find((r) => r.active && r.kind === "uscita" && r.frequency === "anno" && !used.has(r.id) && t.re.test(r.description)) || null;
+}
+function renderDlSheet() {
+  const e = dlEdit, t = DL_TYPES[e.type];
+  $("cardl-types").hidden = !!e.d;
+  $("cardl-types").replaceChildren(...Object.entries(DL_TYPES).map(([k, x]) => {
+    const b = el("button", "chip" + (k === e.type ? " on" : ""), x.name);
+    b.type = "button";
+    b.style.setProperty("--chip-c", x.color);
+    b.addEventListener("click", () => {
+      e.type = k;
+      if (!e.d) {
+        e.rec = findDlRec(k);
+        if (e.rec) { $("cardl-date").value = recNext(e.rec, e.rec.last_date); $("cardl-amount").value = fmtPlain(e.rec.amount_cents); }
+      }
+      renderDlSheet();
+    });
+    return b;
+  }));
+  $("cardl-name-row").hidden = e.type !== "altro";
+  $("cardl-km-row").hidden = !t.km;
+  $("cardl-date-lbl").textContent = e.type === "tagliando" ? "Entro il" : "Scade il";
+  $("cardl-pay").hidden = !t.pay;
+  $("cardl-amount-row").hidden = !$("cardl-rep").checked;
+  $("cardl-done").hidden = !!(t.pay && $("cardl-rep").checked);
+  const notes = {
+    pay: e.rec
+      ? `Collegata al pagamento periodico "${e.rec.description}": la data è quella del prossimo pagamento e passa all'anno dopo quando arriva.`
+      : "Flunora crea un pagamento periodico ogni anno in quella data, nella categoria dell'auto: arriva da solo e la scadenza si rinnova.",
+    revisione: "La prima dopo 4 anni dall'immatricolazione, poi ogni 2 anni. Quando l'hai fatta tocca \"Fatto, rinnova\".",
+    tagliando: "Vale la prima che arriva tra la data e i km (letti dai rifornimenti o da \"Aggiorna i km\").",
+  };
+  $("cardl-note").textContent = t.pay && $("cardl-rep").checked ? notes.pay : notes[e.type] || "Flunora ti avvisa prima, nella Dashboard e con una notifica.";
+}
+$("cardl-rep").addEventListener("change", renderDlSheet);
+$("car-dl-new").addEventListener("click", () => {
+  const used = new Set((carCfg()?.deadlines || []).map((d) => d.type));
+  openDlSheet(null, ["assicurazione", "bollo", "revisione", "tagliando"].find((k) => !used.has(k)) || "altro");
+});
+$("cardl-cancel").addEventListener("click", () => closeTopSheet("cardl-sheet"));
+$("cardl-backdrop").addEventListener("click", () => closeTopSheet("cardl-sheet"));
+
+$("cardl-sheet").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const e = dlEdit, t = DL_TYPES[e.type], msg = $("cardl-msg");
+  const date = $("cardl-date").value;
+  const km = t.km ? parseKm($("cardl-km").value) : null;
+  if (Number.isNaN(km)) return setMsg(msg, "Scrivi i km solo con i numeri, es. 60000.", true);
+  if (!date && !km) return setMsg(msg, t.km ? "Scegli una data o i km." : "Scegli la data.", true);
+  if (e.type === "altro" && !$("cardl-name").value.trim()) return setMsg(msg, "Dai un nome alla scadenza.", true);
+  const pay = t.pay && $("cardl-rep").checked;
+  let recId = null;
+  if (pay) {
+    const cents = parseAmount($("cardl-amount").value);
+    if (cents === null) return setMsg(msg, "Inserisci l'importo, es. 420.", true);
+    if (!date) return setMsg(msg, "Scegli la data del pagamento.", true);
+    const today = isoDate(new Date());
+    const [, m, d] = date.split("-").map(Number);
+    const base = { amount_cents: cents, frequency: "anno", day_of_month: d, month_of_year: m };
+    // una data già passata vuol dire già pagato: il prossimo è tra un anno
+    const when = date < today ? { start_date: date, last_date: date } : { start_date: date, last_date: null };
+    if (e.rec) {
+      const shown = recNext(e.rec, e.rec.last_date);
+      const patch = shown === date ? { ...base } : { ...base, ...when };
+      const { error } = await sb.from("recurring").update(patch).eq("id", e.rec.id);
+      if (error) return setMsg(msg, "Errore nel salvataggio: " + traduciErrore(error.message), true);
+      recId = e.rec.id;
+    } else {
+      const cat = await catForDl(e.type);
+      if (!cat) return setMsg(msg, "Prima scegli le categorie dell'auto.", true);
+      const { data, error } = await sb.from("recurring").insert({
+        kind: "uscita", category_id: cat.id, description: e.type === "bollo" ? "Bollo auto" : "Assicurazione auto",
+        ...base, ...when, active: true, is_subscription: false,
+      }).select().maybeSingle();
+      if (error) return setMsg(msg, "Errore nel salvataggio: " + traduciErrore(error.message), true);
+      recId = data?.id || null;
+    }
+  }
+  const row = {
+    id: e.d?.id || "d" + Date.now().toString(36), type: e.type,
+    name: e.type === "altro" ? $("cardl-name").value.trim() : undefined,
+    date: date || null, km_due: km || null, notice: Number($("cardl-notice").value), rec_id: recId,
+  };
+  const list = (carCfg()?.deadlines || []).filter((x) => x.id !== row.id).concat(row);
+  await saveCar({ deadlines: list });
+  closeTopSheet("cardl-sheet");
+  if (pay) await runRecurring(true);
+  toast(e.d ? `${dlName(row)} aggiornata` : `${dlName(row)}: scadenza salvata`);
+  renderCar();
+});
+
+// fatto: la prossima scadenza si propone e si controlla prima di salvare
+$("cardl-done").addEventListener("click", () => {
+  const e = dlEdit, t = DL_TYPES[e.type];
+  const today = isoDate(new Date());
+  const from = $("cardl-date").value && $("cardl-date").value > today ? $("cardl-date").value : today;
+  const [y, m, d] = from.split("-").map(Number);
+  const next = new Date(y, m - 1 + t.every, 1);
+  $("cardl-date").value = isoDate(new Date(next.getFullYear(), next.getMonth(), Math.min(d, daysIn(next.getFullYear(), next.getMonth()))));
+  if (t.km) $("cardl-km").value = "";
+  setMsg($("cardl-msg"), `Prossima ${dlName(e.d).toLowerCase()}: ${longDay($("cardl-date").value)}. Controlla e tocca Salva.`);
+});
+$("cardl-del").addEventListener("click", () => {
+  const e = dlEdit;
+  if (!e?.d) return;
+  const drop = async (alsoRec) => {
+    if (alsoRec && e.rec) {
+      const { error } = await sb.from("recurring").delete().eq("id", e.rec.id);
+      if (error) return toast("Errore: " + traduciErrore(error.message));
+    }
+    await saveCar({ deadlines: (carCfg()?.deadlines || []).filter((x) => x.id !== e.d.id) });
+    closeTopSheet("cardl-sheet");
+    toast(`${dlName(e.d)}: scadenza eliminata`);
+    renderCar();
+  };
+  actionSheet({
+    title: `Eliminare ${dlName(e.d).toLowerCase()}?`,
+    message: e.rec ? `È collegata al pagamento periodico "${e.rec.description}" (${fmt(e.rec.amount_cents)} ogni anno).` : "",
+    actions: e.rec
+      ? [{ label: "Elimina solo la scadenza", onClick: () => drop(false) }, { label: "Elimina anche il pagamento periodico", danger: true, onClick: () => drop(true) }]
+      : [{ label: "Elimina scadenza", danger: true, onClick: () => drop(false) }],
+  });
+});
+
+// ---------- chilometri ----------
+$("car-km-new").addEventListener("click", () => {
+  const lk = lastKm();
+  $("carkm-value").value = "";
+  $("carkm-date").value = isoDate(new Date());
+  $("carkm-note").textContent = lk ? `Ultima lettura: ${fmtKm(lk.km)} il ${advDate(lk.date)}.` : "Scrivi i km che segna adesso il contachilometri.";
+  setMsg($("carkm-msg"), "");
+  openTopSheet("carkm-sheet");
+});
+$("carkm-cancel").addEventListener("click", () => closeTopSheet("carkm-sheet"));
+$("carkm-backdrop").addEventListener("click", () => closeTopSheet("carkm-sheet"));
+$("carkm-sheet").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const km = parseKm($("carkm-value").value), date = $("carkm-date").value || isoDate(new Date());
+  if (km === null || Number.isNaN(km)) return setMsg($("carkm-msg"), "Scrivi i km solo con i numeri, es. 48250.", true);
+  const prev = kmReadings().filter((r) => r.date <= date).at(-1);
+  if (prev && km < prev.km) return setMsg($("carkm-msg"), `Sono meno dell'ultima lettura (${fmtKm(prev.km)} il ${advDate(prev.date)}): controlla.`, true);
+  const list = (carCfg()?.km || []).filter((k) => k.date !== date).concat({ date, km }).sort((a, b) => a.date.localeCompare(b.date)).slice(-200);
+  await saveCar({ km: list });
+  closeTopSheet("carkm-sheet");
+  toast(`Contachilometri: ${fmtKm(km)}`);
+  renderCar();
+});
+
+// ---------- pannello +: litri, pieno e km per le categorie dell'auto ----------
+function carBoxShown() { return !$("car-box").hidden; }
+function syncCarBox() {
+  const show = carOn() && state.kind === "uscita" && !state.editingRec && carCats().includes(state.categoryId);
+  const fuel = show && state.categoryId === fuelCat();
+  $("car-box").hidden = !show;
+  $("fuel-liters-row").hidden = !fuel;
+  $("fuel-full-row").hidden = !fuel;
+  updateCarHint();
+}
+function updateCarHint() {
+  const hint = $("car-hint");
+  if (!carBoxShown()) { hint.hidden = true; return; }
+  const fuel = state.categoryId === fuelCat();
+  const parts = [];
+  const l = parseLiters($("f-liters").value), cents = parseAmount($("f-amount").value), km = parseKm($("f-km").value);
+  if (fuel && l && cents) parts.push(fmtPerL(cents, l));
+  const lk = kmReadings().filter((r) => !state.editing || r.date !== state.editing.date || r.km !== state.editing.odometer_km).at(-1);
+  if (km && lk && km > lk.km) parts.push(`${fmtKm(km - lk.km)} dall'ultima lettura`);
+  if (fuel && l && km && $("f-full").checked) {
+    // consumo dall'ultimo pieno, come se questo rifornimento fosse già salvato
+    const probe = { id: "probe", category_id: fuelCat(), date: $("f-date").value || isoDate(new Date()), fuel_liters: l, odometer_km: km, fuel_full: true };
+    const others = (state.carTx || []).filter((t) => t.id !== state.editing?.id);
+    const s = fuelSegments([...others, probe]).find((x) => x.tx.id === "probe");
+    if (s) parts.push(`${nfL.format(Math.round(s.kml * 10) / 10)} km/l dall'ultimo pieno`);
+  }
+  hint.textContent = parts.length ? parts.join(" · ") : fuel ? "Con litri e km Flunora calcola il consumo; se non fai il pieno, spegni \"Pieno\"." : "I km sono facoltativi: servono per sapere quanti ne fai e quanto costa ogni km.";
+  hint.hidden = false;
+}
+["f-liters", "f-km", "f-amount", "f-date"].forEach((id) => $(id).addEventListener("input", updateCarHint));
+$("f-full").addEventListener("change", updateCarHint);
+function fillCarBox(tx) {
+  $("f-liters").value = tx?.fuel_liters ? nfL.format(Number(tx.fuel_liters)) : "";
+  $("f-km").value = tx?.odometer_km != null ? nfKm.format(tx.odometer_km) : "";
+  $("f-full").checked = tx ? tx.fuel_full !== false : true;
+}
+// dati dell'auto da salvare con il movimento (null = errore già mostrato)
+function carFields(row) {
+  if (!carBoxShown()) {
+    const old = state.editing;
+    if (old && (old.fuel_liters != null || old.odometer_km != null)) Object.assign(row, { fuel_liters: null, odometer_km: null, fuel_full: null });
+    return row;
+  }
+  const fuel = state.categoryId === fuelCat();
+  const l = fuel ? parseLiters($("f-liters").value) : null;
+  const km = parseKm($("f-km").value);
+  if (Number.isNaN(l)) { setMsg($("sheet-msg"), "Scrivi i litri con un numero, es. 38,5.", true); return null; }
+  if (Number.isNaN(km)) { setMsg($("sheet-msg"), "Scrivi i km solo con i numeri, es. 48250.", true); return null; }
+  if (l != null || km != null || (state.editing && (state.editing.fuel_liters != null || state.editing.odometer_km != null))) {
+    Object.assign(row, { fuel_liters: l, odometer_km: km, fuel_full: fuel && l != null ? $("f-full").checked : null });
+  }
+  return row;
+}
+// "+ Rifornimento" e il + dalla sezione Auto
+function openFuelSheet() {
+  openSheet(null);
+  setKind("uscita");
+  if (fuelCat()) { state.categoryId = fuelCat(); renderChips(); }
+  $("sheet-title").textContent = "Rifornimento";
+  $("kind-anticipo").hidden = true;
+  syncRepRow();
+  syncCarBox();
+}
+$("car-fuel-new").addEventListener("click", openFuelSheet);
+
+// ---------- backup: categorie e pagamenti si ritrovano per nome (al ripristino gli id cambiano) ----------
+function carForBackup(recurring = []) {
+  const car = carCfg();
+  if (!car) return undefined;
+  const name = (id) => catById(id)?.name || null;
+  return {
+    ...car, cat_names: carCats().map(name), fuel_name: fuelCat() ? name(fuelCat()) : null,
+    deadlines: (car.deadlines || []).map((d) => ({ ...d, rec_desc: d.rec_id ? recurring.find((r) => r.id === d.rec_id)?.description || null : null })),
+  };
+}
+async function remapCarAfterRestore() {
+  const car = state.settingsData.car;
+  if (!car?.cat_names) return;
+  const byName = (n) => n && state.categories.find((c) => c.kind === "uscita" && c.name.toLowerCase() === String(n).toLowerCase())?.id;
+  const recs = await loadRecurring();
+  const { cat_names, fuel_name, ...rest } = car;
+  state.settingsData.car = {
+    ...rest, cats: cat_names.map(byName).filter(Boolean), fuel: byName(fuel_name) || null,
+    deadlines: (car.deadlines || []).map(({ rec_desc, ...d }) => ({ ...d, rec_id: rec_desc ? recs.find((r) => r.description === rec_desc && r.frequency === "anno")?.id || null : null })),
+  };
+  await saveSettingsData();
+}
+
+// ---------- dashboard e notifiche ----------
+// scadenze dell'auto da mostrare in "In arrivo" (quelle non collegate a un pagamento, che compare già)
+function carUpcoming(limitDays) {
+  if (!carOn()) return [];
+  const today = isoDate(new Date());
+  return (carCfg()?.deadlines || []).filter((d) => !dlRec(d)).map((d) => ({ d: dlDue(d), dl: d }))
+    .filter((x) => x.d && x.d > today && daysTo(x.d) <= Math.max(limitDays, x.dl.notice ?? 15));
+}
+// testo della notifica (uguale a quello della funzione su Supabase)
+function carNotifText(d, due) {
+  const t = DL_TYPES[d.type] || DL_TYPES.altro;
+  const r = dlRec(d), lk = lastKm();
+  const giorno = new Date(due + "T12:00").toLocaleDateString("it-IT", { day: "numeric", month: "long" });
+  const title = `${t.long || dlName(d)}: ${d.type === "tagliando" ? "entro" : "scade"} il ${giorno}`;
+  const body = r ? `Il pagamento di ${fmt(r.amount_cents)} arriva quel giorno`
+    : d.km_due ? `Oppure a ${fmtKm(d.km_due)}${lk ? `: ora sei a ${fmtKm(lk.km)}` : ""}`
+    : d.type === "revisione" ? "Prenota la revisione in tempo" : "Ricordati di pensarci in tempo";
+  return { title, body };
+}
 
 init();
 

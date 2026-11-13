@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611131707">
+  <link rel="stylesheet" href="css/style.css?v=202611131730">
 </head>
 <body>
 
@@ -203,12 +203,41 @@
       <p class="secondary small foot">Flunora aggiunge abbonamenti e pagamenti periodici quando apri l'app, ognuno con la sua data: se la apri dopo qualche giorno arrivano tutti, senza doppioni. Il risparmio periodico dei Desideri si imposta dal menu del desiderio.</p>
     </main>
 
+    <!-- ---------- AUTO (0.7.0): spese, rifornimenti, chilometri e scadenze ---------- -->
     <main id="page-auto" class="page" hidden>
-      <header class="page-head"><h1>Auto</h1></header>
-      <div class="card placeholder">
+      <header class="page-head"><h1>Auto</h1><button type="button" id="car-fuel-new" class="wish-new" hidden>+ Rifornimento</button></header>
+      <section class="card placeholder car-setup" id="car-setup" hidden>
         <span class="ph-ico" style="--c:#ff9500"><svg viewBox="0 0 24 24" class="stroke"><path d="M5 16V11l2-4.5h10L19 11v5"/><path d="M3.5 16h17M5 11h14"/><circle cx="7.5" cy="17.5" r="1.8"/><circle cx="16.5" cy="17.5" r="1.8"/></svg></span>
-        <h2>In arrivo</h2>
-        <p class="secondary">Qui troverai documenti e pagamenti dell'auto: assicurazione, bollo, revisione e tagliandi.</p>
+        <h2>Prepariamo la sezione Auto</h2>
+        <p class="secondary">Scegli le categorie delle spese dell'auto: Flunora le raccoglie qui, con i rifornimenti, i chilometri e le scadenze come assicurazione, bollo e revisione.</p>
+        <button type="button" id="car-setup-go" class="lock-btn">Inizia</button>
+      </section>
+      <div id="car-body" class="car-body" hidden>
+        <section class="card car-hero" id="car-hero">
+          <button type="button" class="car-name" id="car-name-btn"><span id="car-name">La tua auto</span><small id="car-plate" class="car-plate" hidden></small><span class="chev">›</span></button>
+          <span class="secondary lbl">Costa in media al mese</span>
+          <strong class="big" id="car-month">0,00 €</strong>
+          <span class="secondary small" id="car-sub"></span>
+        </section>
+
+        <div class="section-title row-between car-title"><h3>Scadenze</h3><button type="button" id="car-dl-new" class="link-btn">+ Aggiungi</button></div>
+        <ul class="card list settings car-dl" id="car-dl"></ul>
+        <div class="chips car-dl-suggest" id="car-dl-suggest" hidden></div>
+
+        <div class="section-title row-between car-title"><h3>Rifornimenti</h3></div>
+        <section class="card car-fuel">
+          <div class="car-kpis" id="car-fuel-kpis"></div>
+          <ul class="list car-fuel-list" id="car-fuel-list"></ul>
+          <p class="secondary small" id="car-fuel-empty" hidden>Nessun rifornimento. Tocca "+ Rifornimento" in alto: con litri e chilometri Flunora calcola quanto consuma l'auto.</p>
+        </section>
+
+        <div class="section-title row-between car-title"><h3>Chilometri</h3><button type="button" id="car-km-new" class="link-btn">Aggiorna i km</button></div>
+        <section class="card car-km" id="car-km"></section>
+
+        <div class="section-title row-between car-title"><h3 id="car-cats-title">Spese per voce</h3>
+          <div class="stepper car-year"><button type="button" id="car-year-prev" aria-label="Anno precedente">‹</button><span id="car-year">2026</span><button type="button" id="car-year-next" aria-label="Anno successivo">›</button></div></div>
+        <section class="card car-cats" id="car-cats"></section>
+        <p class="secondary small foot">Le spese dell'auto sono i movimenti delle sue categorie, anche quelli importati dall'estratto conto. Assicurazione e bollo arrivano da soli come pagamenti periodici, ogni anno. Tocca il nome dell'auto per cambiare le categorie.</p>
       </div>
     </main>
 
@@ -426,6 +455,13 @@
         <label class="group-row" id="sub-row" hidden><span>Tipo</span>
           <select id="f-sub"><option value="1">Abbonamento</option><option value="0">Pagamento periodico</option></select></label>
       </div>
+      <!-- 0.7.0: dati dell'auto (solo per le categorie dell'auto) -->
+      <div class="group car-box" id="car-box" hidden>
+        <label class="group-row" id="fuel-liters-row"><span>Litri</span><input id="f-liters" inputmode="decimal" placeholder="Es. 38,5" autocomplete="off"></label>
+        <label class="group-row"><span>Km</span><input id="f-km" inputmode="numeric" placeholder="Contachilometri, facoltativo" autocomplete="off"></label>
+        <label class="group-row" id="fuel-full-row"><span>Pieno</span><span class="switch"><input type="checkbox" id="f-full" aria-label="Pieno" checked><span></span></span></label>
+      </div>
+      <p id="car-hint" class="secondary small foot" hidden></p>
       <!-- 0.6.2: prova gratuita e promemoria per disdire (solo abbonamenti) -->
       <div class="group sub-extra" id="sub-extra" hidden>
         <label class="group-row"><span>Prova gratuita</span><span class="switch"><input type="checkbox" id="f-trial" aria-label="Prova gratuita"><span></span></span></label>
@@ -829,6 +865,79 @@
       <p id="wauto-msg" class="msg" role="status"></p>
     </form>
 
+    <!-- ---------- 0.7.0: LA TUA AUTO (nome, targa, categorie) ---------- -->
+    <div id="car-backdrop" class="sheet-backdrop top"></div>
+    <form id="car-sheet" class="sheet top" aria-hidden="true" novalidate>
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <button type="button" id="car-cancel" class="link-btn">Annulla</button>
+        <h2>La tua auto</h2>
+        <button type="submit" id="car-save" class="link-btn strong">Salva</button>
+      </div>
+      <div class="group">
+        <label class="group-row"><span>Nome</span><input id="car-f-name" placeholder="Es. Panda" maxlength="40" autocomplete="off"></label>
+        <label class="group-row"><span>Targa</span><input id="car-f-plate" placeholder="Facoltativa" maxlength="12" autocomplete="off" autocapitalize="characters"></label>
+      </div>
+      <h3 class="section-title">Categorie dell'auto</h3>
+      <ul class="card list settings" id="car-cat-list"></ul>
+      <button type="button" id="car-add-cats" class="adv-add" hidden></button>
+      <div class="group">
+        <label class="group-row"><span>Rifornimenti</span><select id="car-f-fuel"></select></label>
+      </div>
+      <p class="secondary small foot">Le spese di queste categorie finiscono nella sezione Auto. Per i rifornimenti il pannello + chiede anche litri e chilometri.</p>
+      <p id="car-msg" class="msg" role="status"></p>
+    </form>
+
+    <!-- ---------- 0.7.0: SCADENZA DELL'AUTO ---------- -->
+    <div id="cardl-backdrop" class="sheet-backdrop top"></div>
+    <form id="cardl-sheet" class="sheet top" aria-hidden="true" novalidate>
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <button type="button" id="cardl-cancel" class="link-btn">Annulla</button>
+        <h2 id="cardl-title">Nuova scadenza</h2>
+        <button type="submit" id="cardl-save" class="link-btn strong">Salva</button>
+      </div>
+      <div id="cardl-types" class="chips cardl-types"></div>
+      <div class="group">
+        <label class="group-row" id="cardl-name-row"><span>Nome</span><input id="cardl-name" placeholder="Es. Cambio gomme" maxlength="40" autocomplete="off"></label>
+        <label class="group-row"><span id="cardl-date-lbl">Scade il</span><input type="date" id="cardl-date"></label>
+        <label class="group-row" id="cardl-km-row"><span>Oppure a</span><input id="cardl-km" inputmode="numeric" placeholder="Km, facoltativo" autocomplete="off"></label>
+        <label class="group-row"><span>Avvisami</span>
+          <select id="cardl-notice"><option value="1">Il giorno prima</option><option value="3">3 giorni prima</option><option value="7">7 giorni prima</option><option value="15">15 giorni prima</option><option value="30">30 giorni prima</option></select></label>
+      </div>
+      <div class="group cardl-pay" id="cardl-pay">
+        <label class="group-row"><span>Pagamento ogni anno</span><span class="switch"><input type="checkbox" id="cardl-rep" aria-label="Pagamento ogni anno" checked><span></span></span></label>
+        <label class="group-row" id="cardl-amount-row"><span>Importo</span><input id="cardl-amount" inputmode="decimal" placeholder="0,00 €" autocomplete="off"></label>
+      </div>
+      <p id="cardl-note" class="secondary small foot"></p>
+      <p id="cardl-msg" class="msg" role="status"></p>
+      <div class="sheet-foot" id="cardl-foot" hidden>
+        <button type="button" id="cardl-done" class="btn-plain">Fatto, rinnova</button>
+        <button type="button" id="cardl-del" class="btn-danger">Elimina</button>
+      </div>
+    </form>
+
+    <!-- ---------- 0.7.0: CHILOMETRI ---------- -->
+    <div id="carkm-backdrop" class="sheet-backdrop top"></div>
+    <form id="carkm-sheet" class="sheet top" aria-hidden="true" novalidate>
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <button type="button" id="carkm-cancel" class="link-btn">Annulla</button>
+        <h2>Chilometri</h2>
+        <button type="submit" id="carkm-save" class="link-btn strong">Salva</button>
+      </div>
+      <label class="amount km-amount">
+        <input id="carkm-value" inputmode="numeric" placeholder="0" autocomplete="off" aria-label="Chilometri del contachilometri">
+        <span>km</span>
+      </label>
+      <p class="adv-hint">Quello che segna il contachilometri</p>
+      <div class="group">
+        <label class="group-row"><span>Data</span><input type="date" id="carkm-date"></label>
+      </div>
+      <p id="carkm-note" class="secondary small foot"></p>
+      <p id="carkm-msg" class="msg" role="status"></p>
+    </form>
+
     <!-- ---------- 0.4.4: PANNELLO ALTRE SEZIONI ---------- -->
     <div id="more-backdrop" class="sheet-backdrop topmost"></div>
     <div id="more-sheet" class="action-sheet more-sheet" aria-hidden="true" role="dialog" aria-labelledby="more-title">
@@ -846,11 +955,11 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611131707"></script>
-  <script src="js/releases.js?v=202611131707"></script>
-  <script src="js/icons.js?v=202611131707"></script>
-  <script src="js/app.js?v=202611131707"></script>
-  <script src="js/bank-bdp.js?v=202611131707"></script>
-  <script src="js/import.js?v=202611131707"></script>
+  <script src="js/config.js?v=202611131730"></script>
+  <script src="js/releases.js?v=202611131730"></script>
+  <script src="js/icons.js?v=202611131730"></script>
+  <script src="js/app.js?v=202611131730"></script>
+  <script src="js/bank-bdp.js?v=202611131730"></script>
+  <script src="js/import.js?v=202611131730"></script>
 </body>
 </html>
