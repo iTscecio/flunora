@@ -5,7 +5,7 @@
 // =========================================================
 window.RELEASES = [
   {
-    version: "0.6.1", date: "novembre 2026",
+    version: "0.6.1", date: "13 novembre 2026",
     items: [
       "Nuovo: le notifiche su iPhone, anche ad app chiusa. Le attivi in Impostazioni › Notifiche (serve Flunora aperta dall'icona sulla schermata Home)",
       "Scegli cosa ricevere: periodici in arrivo il giorno prima, recap e avanzo a inizio mese, anticipi in ritardo, promemoria del backup e riepilogo dell'anno; e a che ora",
