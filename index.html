@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611131431">
+  <link rel="stylesheet" href="css/style.css?v=202611131443">
 </head>
 <body>
 
@@ -90,7 +90,7 @@
 
       <!-- 0.6.0: recap del mese passato e periodici in arrivo -->
       <section class="card recap" id="recap" hidden>
-        <div class="recap-head"><strong id="recap-title"></strong><button type="button" id="recap-close" class="x" aria-label="Chiudi">&times;</button></div>
+        <div class="recap-head"><strong id="recap-title"></strong><span class="recap-acts"><button type="button" id="recap-more" class="link-btn">Dettagli &rsaquo;</button><button type="button" id="recap-close" class="x" aria-label="Chiudi">&times;</button></span></div>
         <div class="recap-grid" id="recap-grid"></div>
         <p class="secondary small" id="recap-note"></p>
       </section>
@@ -107,9 +107,9 @@
       </div>
 
       <!-- 0.6.1: riepilogo dell'anno -->
-      <button type="button" class="card yr-open" id="yr-open">
+      <button type="button" class="card yr-open" id="yr-open" hidden>
         <span class="ph-ico" style="--c:#5856d6"><svg viewBox="0 0 24 24" class="stroke"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></span>
-        <span class="yr-open-t"><strong>Il tuo <span class="y"></span> in breve</strong><span class="secondary small">Totali, mesi, categorie, abbonamenti e desideri · anche in PDF</span></span>
+        <span class="yr-open-t"><strong id="yr-open-title">Il tuo anno in breve</strong><span class="secondary small">Totali, mesi, categorie, abbonamenti e desideri · anche in PDF</span></span>
         <span class="chev">&rsaquo;</span>
       </button>
 
@@ -310,6 +310,12 @@
             <span class="label">Mostra le scorciatoie nascoste</span><span id="freq-reset-n" class="value"></span></li>
         </ul>
 
+        <h3 class="section-title">Recap</h3>
+        <ul class="card list settings">
+          <li class="tap" id="open-recaps"><span class="ico" style="--c:#5856d6"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></span>
+            <span class="label">Recap dei mesi e degli anni</span><span class="chev">&rsaquo;</span></li>
+        </ul>
+
         <h3 class="section-title">Notifiche</h3>
         <ul class="card list settings">
           <li class="tap" id="open-notify"><span class="ico" style="--c:#ff3b30"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></svg></span>
@@ -462,7 +468,20 @@
       </div>
     </div>
 
-    <!-- ---------- 0.6.1: RIEPILOGO DELL'ANNO ---------- -->
+    <!-- ---------- 0.6.1: RECAP (elenco dentro le Impostazioni) ---------- -->
+    <div id="recaps" class="settings-panel sub-panel" aria-hidden="true">
+      <header class="glass settings-head">
+        <button type="button" id="recaps-back" class="link-btn back-btn">&lsaquo; Impostazioni</button>
+        <h2>Recap</h2>
+        <span></span>
+      </header>
+      <div class="settings-body">
+        <div id="recap-lists"></div>
+        <p class="secondary small foot">Nella Dashboard il recap del mese resta nei primi 3 giorni del mese, quello dell'anno dal 1° al 10 gennaio. Qui li trovi sempre, anche in PDF.</p>
+      </div>
+    </div>
+
+    <!-- ---------- 0.6.1: RECAP DEL MESE O DELL'ANNO ---------- -->
     <div id="yr" class="settings-panel sub-panel yr-panel" aria-hidden="true">
       <header class="glass settings-head">
         <button type="button" id="yr-back" class="link-btn back-btn">&lsaquo; Dashboard</button>
@@ -815,11 +834,11 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611131431"></script>
-  <script src="js/releases.js?v=202611131431"></script>
-  <script src="js/icons.js?v=202611131431"></script>
-  <script src="js/app.js?v=202611131431"></script>
-  <script src="js/bank-bdp.js?v=202611131431"></script>
-  <script src="js/import.js?v=202611131431"></script>
+  <script src="js/config.js?v=202611131443"></script>
+  <script src="js/releases.js?v=202611131443"></script>
+  <script src="js/icons.js?v=202611131443"></script>
+  <script src="js/app.js?v=202611131443"></script>
+  <script src="js/bank-bdp.js?v=202611131443"></script>
+  <script src="js/import.js?v=202611131443"></script>
 </body>
 </html>

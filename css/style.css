@@ -1348,3 +1348,7 @@ body.is-locked { overflow: hidden; }
 }
 
 .nt-next > li.nt-item::before { display: none; }
+.yr-open[hidden] { display: none; }
+.recap-acts { display: flex; align-items: center; gap: 10px; }
+.recap-acts .link-btn { font-size: 15px; }
+#yr { z-index: 37; }

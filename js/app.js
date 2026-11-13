@@ -245,6 +245,7 @@ async function loadDashboard() {
   renderBackupBanner();   // promemoria backup (0.3.0)
   renderLeftoverBanner(); // avanzo del mese (0.5.1)
   renderRecap();          // recap del mese passato (0.6.0)
+  renderYearCard();       // recap dell'anno passato, 1–10 gennaio (0.6.1)
   renderUpcoming();       // periodici in arrivo (0.6.0)
   const y = state.year;
   $("year-label").textContent = y;
@@ -4005,12 +4006,13 @@ $("upcoming-all").addEventListener("click", () => { location.hash = "#abbonament
 
 // ---------- Dashboard: recap del mese passato (nei primi 10 giorni del mese) ----------
 const recapSeen = () => { try { return localStorage.getItem("flunora.recapSeen") || ""; } catch { return ""; } };
+const RECAP_MONTH_DAYS = 3, RECAP_YEAR_DAYS = 10; // 0.6.1: giorni in cui i recap restano nella Dashboard
 async function renderRecap() {
   const card = $("recap");
   const now = new Date();
   const prev = addMonths(firstOfMonth(now), -1), before = addMonths(prev, -1);
   const key = monthKey(prev);
-  if (now.getDate() > 10 || recapSeen() >= key) { card.hidden = true; return; }
+  if (now.getDate() > RECAP_MONTH_DAYS || recapSeen() >= key) { card.hidden = true; return; } // 0.6.1: solo i primi 3 giorni
   const { data, error } = await sb.from("transactions").select("date, amount_cents, kind, category_id")
     .gte("date", isoDate(before)).lt("date", isoDate(firstOfMonth(now)));
   if (error) { card.hidden = true; return; }
@@ -4324,9 +4326,22 @@ $("nt-test").addEventListener("click", async () => {
 });
 
 // =========================================================
-// IMPR-006 (0.6.1) — RIEPILOGO DELL'ANNO
+// IMPR-006 (0.6.1) — RECAP DEL MESE E DELL'ANNO
+// Nella Dashboard: il recap del mese passato nei primi 3 giorni del mese, quello
+// dell'anno passato nei primi 10 giorni di gennaio. Sempre in Impostazioni › Recap.
 // =========================================================
-$("yr-open").addEventListener("click", () => openYearRecap(state.year));
+const capit = (t) => t[0].toUpperCase() + t.slice(1);
+let recapFrom = "dashboard";
+
+// carta dell'anno nella Dashboard: 1–10 gennaio, per l'anno appena chiuso
+function renderYearCard() {
+  const now = new Date(), y = now.getFullYear() - 1;
+  const show = now.getMonth() === 0 && now.getDate() <= RECAP_YEAR_DAYS;
+  $("yr-open").hidden = !show;
+  if (show) $("yr-open-title").textContent = `Il tuo ${y} in breve`;
+}
+$("yr-open").addEventListener("click", () => openRecap(new Date().getFullYear() - 1, null, "dashboard"));
+$("recap-more").addEventListener("click", () => { const p = addMonths(firstOfMonth(new Date()), -1); openRecap(p.getFullYear(), p.getMonth(), "dashboard"); });
 $("yr-back").addEventListener("click", () => { $("yr").classList.remove("open"); $("yr").setAttribute("aria-hidden", "true"); });
 $("yr-pdf").addEventListener("click", () => {
   document.body.classList.add("print-yr");
@@ -4334,27 +4349,80 @@ $("yr-pdf").addEventListener("click", () => {
 });
 window.addEventListener("afterprint", () => document.body.classList.remove("print-yr"));
 
-async function openYearRecap(y) {
-  $("yr-head").textContent = `Il tuo ${y}`;
-  $("yr-body").replaceChildren(el("p", "secondary center", "Calcolo il riepilogo…"));
+// ---------- Impostazioni › Recap ----------
+async function openRecapList() {
+  $("recaps").scrollTop = 0;
+  $("recaps").classList.add("open");
+  $("recaps").setAttribute("aria-hidden", "false");
+  const box = $("recap-lists");
+  box.replaceChildren(el("p", "secondary center", "Cerco i mesi con movimenti…"));
+  const since = `${new Date().getFullYear() - 4}-01-01`;
+  const { data, error } = await sb.from("transactions").select("date").gte("date", since);
+  if (error) { box.replaceChildren(el("p", "secondary", "Recap non disponibili: " + traduciErrore(error.message))); return; }
+  const now = new Date(), curKey = monthKey(now);
+  const months = [...new Set(data.map((t) => t.date.slice(0, 7)))].sort().reverse();
+  const years = [...new Set(months.map((k) => Number(k.slice(0, 4))))];
+  box.replaceChildren();
+  const list = (title, items) => {
+    if (!items.length) return;
+    box.append(el("h3", "section-title", title));
+    const ul = el("ul", "card list settings");
+    for (const it of items) {
+      const li = el("li", "tap");
+      li.append(el("span", "label", it.label));
+      if (it.note) li.append(el("span", "value", it.note));
+      li.append(el("span", "chev", "›"));
+      li.addEventListener("click", it.open);
+      ul.append(li);
+    }
+    box.append(ul);
+  };
+  list("Anni", years.map((y) => ({ label: `${y}`, note: y === now.getFullYear() ? "in corso" : "", open: () => openRecap(y, null, "settings") })));
+  list("Mesi", months.slice(0, 24).map((k) => {
+    const [y, m] = k.split("-").map(Number);
+    return { label: `${capit(MESI[m - 1])} ${y}`, note: k === curKey ? "in corso" : "", open: () => openRecap(y, m - 1, "settings") };
+  }));
+  if (!months.length) box.append(el("p", "secondary foot", "Ancora nessun movimento: i recap compaiono qui mese per mese."));
+}
+function closeRecapList() {
+  $("recaps").classList.remove("open");
+  $("recaps").setAttribute("aria-hidden", "true");
+}
+$("open-recaps").addEventListener("click", openRecapList);
+$("recaps-back").addEventListener("click", closeRecapList);
+
+// ---------- il recap (m = null per l'anno intero) ----------
+async function openRecap(y, m = null, from = "dashboard") {
+  recapFrom = from;
+  const isYear = m === null;
+  const start = isYear ? new Date(y, 0, 1) : new Date(y, m, 1);
+  const end = isYear ? new Date(y + 1, 0, 1) : new Date(y, m + 1, 1);
+  const prevStart = isYear ? new Date(y - 1, 0, 1) : new Date(y, m - 1, 1);
+  const period = isYear ? `${y}` : `${capit(MESI[m])} ${y}`;
+  $("yr-back").innerHTML = `&lsaquo; ${from === "settings" ? "Recap" : "Dashboard"}`;
+  $("yr-head").textContent = isYear ? `Il tuo ${y}` : period;
+  $("yr-body").replaceChildren(el("p", "secondary center", "Calcolo il recap…"));
   $("yr").scrollTop = 0;
   $("yr").classList.add("open");
   $("yr").setAttribute("aria-hidden", "false");
-  const from = `${y}-01-01`, to = `${y + 1}-01-01`;
-  const [tRes, recs, wRes, aRes] = await Promise.all([
-    sb.from("transactions").select("date, amount_cents, kind, category_id, recurring_id").gte("date", from).lt("date", to),
+  const from_ = isoDate(start), to = isoDate(end);
+  const [tRes, pRes, recs, wRes, aRes, bRes] = await Promise.all([
+    sb.from("transactions").select("date, amount_cents, kind, category_id, recurring_id").gte("date", from_).lt("date", to),
+    sb.from("transactions").select("amount_cents, kind").gte("date", isoDate(prevStart)).lt("date", from_),
     loadRecurring(),
     sb.from("wishes").select("*"),
-    sb.from("advances").select("*").gte("date", from).lt("date", to),
+    sb.from("advances").select("*").gte("date", from_).lt("date", to),
+    isYear ? Promise.resolve({ data: null }) : sb.from("budgets").select("amount_cents").eq("month", from_).maybeSingle(),
   ]);
-  if (tRes.error) { $("yr-body").replaceChildren(el("p", "secondary", "Riepilogo non disponibile: " + traduciErrore(tRes.error.message))); return; }
-  const tx = tRes.data;
+  if (tRes.error) { $("yr-body").replaceChildren(el("p", "secondary", "Recap non disponibile: " + traduciErrore(tRes.error.message))); return; }
+  const tx = tRes.data, old = pRes.error ? [] : pRes.data;
   const sum = (rows, k) => rows.filter((t) => t.kind === k).reduce((a, t) => a + t.amount_cents, 0);
   const ent = sum(tx, "entrata"), usc = sum(tx, "uscita"), inv = sum(tx, "investimento"), rim = ent - usc - inv;
   const body = $("yr-body");
   body.replaceChildren();
   const now = new Date();
-  const fino = y === now.getFullYear() ? `dal 1° gennaio a oggi, ${now.getDate()} ${MESI[now.getMonth()]}` : `dal 1° gennaio al 31 dicembre ${y}`;
+  const inCorso = now >= start && now < end;
+  const fino = inCorso ? `${isYear ? "dal 1° gennaio" : `dal 1° ${MESI[m]}`} a oggi, ${now.getDate()} ${MESI[now.getMonth()]}` : isYear ? `dal 1° gennaio al 31 dicembre ${y}` : `tutto ${MESI[m]} ${y}`;
   const hero = el("section", "card yr-hero");
   hero.append(el("span", "secondary small", fino), el("span", "lbl", "Ti sono rimasti"), el("span", "big" + (rim < 0 ? " neg" : ""), (rim < 0 ? "− " : "") + fmt(Math.abs(rim))));
   const g = el("div", "yr-kpis");
@@ -4363,20 +4431,34 @@ async function openYearRecap(y) {
   }
   hero.append(g);
   body.append(hero);
+  const row = (t, v, s) => { const d = el("div", "yr-row"); d.append(el("span", null, t), el("strong", null, v)); if (s) d.append(el("small", "secondary", s)); return d; };
 
-  // mesi
-  const months = Array.from({ length: 12 }, (_, m) => {
-    const rows = tx.filter((t) => Number(t.date.slice(5, 7)) === m + 1);
-    return { m, n: rows.length, usc: sum(rows, "uscita"), rim: sum(rows, "entrata") - sum(rows, "uscita") - sum(rows, "investimento") };
-  }).filter((x) => x.n);
-  if (months.length) {
-    const best = [...months].sort((a, b) => b.rim - a.rim)[0], dear = [...months].sort((a, b) => b.usc - a.usc)[0];
-    const cap = (m) => MESI[m][0].toUpperCase() + MESI[m].slice(1);
+  if (isYear) {
+    const months = Array.from({ length: 12 }, (_, i) => {
+      const rows = tx.filter((t) => Number(t.date.slice(5, 7)) === i + 1);
+      return { m: i, n: rows.length, usc: sum(rows, "uscita"), rim: sum(rows, "entrata") - sum(rows, "uscita") - sum(rows, "investimento") };
+    }).filter((x) => x.n);
+    if (months.length) {
+      const best = [...months].sort((a, b) => b.rim - a.rim)[0], dear = [...months].sort((a, b) => b.usc - a.usc)[0];
+      const sec = el("section", "card yr-sec");
+      sec.append(el("h3", null, "I mesi"));
+      sec.append(row("Mese migliore", capit(MESI[best.m]), `ti sono rimasti ${fmt(best.rim)}`), row("Mese più caro", capit(MESI[dear.m]), `uscite ${fmt(dear.usc)}`),
+        row("Uscite medie al mese", fmt(Math.round(usc / months.length)), `su ${months.length} ${months.length === 1 ? "mese" : "mesi"} con movimenti`));
+      body.append(sec);
+    }
+  } else {
+    // confronto con il mese prima e budget
     const sec = el("section", "card yr-sec");
-    sec.append(el("h3", null, "I mesi"));
-    const row = (t, v, s) => { const d = el("div", "yr-row"); d.append(el("span", null, t), el("strong", null, v)); if (s) d.append(el("small", "secondary", s)); return d; };
-    sec.append(row("Mese migliore", cap(best.m), `ti sono rimasti ${fmt(best.rim)}`), row("Mese più caro", cap(dear.m), `uscite ${fmt(dear.usc)}`),
-      row("Uscite medie al mese", fmt(Math.round(usc / months.length)), `su ${months.length} ${months.length === 1 ? "mese" : "mesi"} con movimenti`));
+    sec.append(el("h3", null, `Rispetto a ${MESI[prevStart.getMonth()]}`));
+    const oldUsc = sum(old, "uscita"), oldEnt = sum(old, "entrata");
+    const pct = (a, b) => { if (!b) return "—"; const v = Math.round(((a - b) / b) * 100); return v === 0 ? "uguali" : `${v > 0 ? "+" : "−"}${Math.abs(v)}%`; };
+    sec.append(row("Uscite", pct(usc, oldUsc), oldUsc ? `${fmt(oldUsc)} a ${MESI[prevStart.getMonth()]}` : "nessuna uscita il mese prima"),
+      row("Entrate", pct(ent, oldEnt), oldEnt ? `${fmt(oldEnt)} a ${MESI[prevStart.getMonth()]}` : "nessuna entrata il mese prima"));
+    const budget = (bRes.error ? null : bRes.data?.amount_cents) ?? defaultBudget();
+    if (budget) {
+      const left = budget - usc;
+      sec.append(row("Budget", left >= 0 ? `avanzati ${fmt(left)}` : `superato di ${fmt(-left)}`, `spesi ${fmt(usc)} su ${fmt(budget)}`));
+    }
     body.append(sec);
   }
 
@@ -4409,7 +4491,7 @@ async function openYearRecap(y) {
     const sec = el("section", "card yr-sec");
     sec.append(el("h3", null, "Abbonamenti"));
     const p = el("p", null);
-    if (paidSubs) p.append(`Quest'anno hai speso `, el("strong", null, fmt(paidSubs)), " in abbonamenti. ");
+    if (paidSubs) p.append(`${isYear ? "Quest'anno" : "Questo mese"} hai speso `, el("strong", null, fmt(paidSubs)), " in abbonamenti. ");
     p.append(`Ne hai ${active.length} ${active.length === 1 ? "attivo, che costa" : "attivi, che costano"} `, el("strong", null, fmt(yearly)), " all'anno.");
     sec.append(p);
     body.append(sec);
@@ -4417,14 +4499,14 @@ async function openYearRecap(y) {
 
   // desideri e anticipi
   const wishes = wRes.error ? [] : wRes.data;
-  const bought = wishes.filter((w) => w.status === "comprato" && (w.closed_on || "").startsWith(String(y)));
+  const bought = wishes.filter((w) => w.status === "comprato" && w.closed_on && w.closed_on >= from_ && w.closed_on < to);
   const savedNow = wishes.filter((w) => w.status === "attivo").reduce((a, w) => a + w.saved_cents, 0) + wishPool();
-  if (bought.length || savedNow) {
+  if (bought.length || (inCorso && savedNow)) {
     const sec = el("section", "card yr-sec");
     sec.append(el("h3", null, "Desideri"));
     const p = el("p", null);
-    if (bought.length) p.append(`Ne hai realizzati ${bought.length}: `, el("strong", null, bought.map((w) => w.name).join(", ")), ". ");
-    if (savedNow) p.append("Messi da parte adesso: ", el("strong", null, fmt(savedNow)), ".");
+    if (bought.length) p.append(`${bought.length === 1 ? "Ne hai realizzato 1" : `Ne hai realizzati ${bought.length}`}: `, el("strong", null, bought.map((w) => w.name).join(", ")), ". ");
+    if (inCorso && savedNow) p.append("Messi da parte adesso: ", el("strong", null, fmt(savedNow)), ".");
     sec.append(p);
     body.append(sec);
   }
@@ -4438,7 +4520,8 @@ async function openYearRecap(y) {
     sec.append(p);
     body.append(sec);
   }
-  body.append(el("p", "secondary small center yr-foot", `Flunora · riepilogo del ${y} · creato il ${now.toLocaleDateString("it-IT")}`));
+  if (!tx.length) body.append(el("p", "secondary foot", "Nessun movimento in questo periodo."));
+  body.append(el("p", "secondary small center yr-foot", `Flunora · recap ${isYear ? "del" : "di"} ${period} · creato il ${now.toLocaleDateString("it-IT")}`));
 }
 
 // =========================================================

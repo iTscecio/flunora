@@ -10,7 +10,8 @@ window.RELEASES = [
       "Nuovo: le notifiche su iPhone, anche ad app chiusa. Le attivi in Impostazioni › Notifiche (serve Flunora aperta dall'icona sulla schermata Home)",
       "Scegli cosa ricevere: periodici in arrivo il giorno prima, recap e avanzo a inizio mese, anticipi in ritardo, promemoria del backup e riepilogo dell'anno; e a che ora",
       "Gli abbonamenti e i pagamenti periodici ora arrivano ogni giorno anche se non apri Flunora",
-      "Nuovo nella Dashboard: \"Il tuo anno in breve\", con totali, mese migliore e più caro, categorie, abbonamenti, desideri e anticipi; si salva in PDF (IMPR-006)",
+      "Nuovo: i Recap, in Impostazioni › Recap. Per ogni mese e ogni anno: quanto ti è rimasto, il confronto con il mese prima e il budget, le categorie, gli abbonamenti, i desideri e gli anticipi; si salvano in PDF (IMPR-006)",
+      "Nella Dashboard il recap del mese passato resta nei primi 3 giorni del mese (con \"Dettagli\"), quello dell'anno dal 1° al 10 gennaio",
     ],
   },
   {
