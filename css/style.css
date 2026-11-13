@@ -1232,3 +1232,13 @@ body.scroll-locked { position: fixed; left: 0; right: 0; overflow: hidden; }
 }
 .lock-out { margin-top: 18px; font-size: 15px; }
 body.is-locked { overflow: hidden; }
+/* 0.5.1: Salvadanaio, Sposta, avviso avanzo nella Dashboard */
+.wmove-to[hidden] { display: none; }
+.wmove-to { display: grid; gap: 8px; margin-top: 6px; }
+.wmove-to .section-title { margin: 0; padding: 0 4px; }
+#wmove-dir button[hidden] { display: none; }
+.wish-pool h2 { display: flex; align-items: center; gap: 8px; }
+.pool-ico { width: 26px; height: 26px; border-radius: 7px; background: #ff9f0a; display: grid; place-items: center; flex: none; }
+.pool-ico svg { width: 18px; height: 18px; fill: none; stroke: #fff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.adv-btn[hidden] { display: none; }
+.left-banner .ic { background: #34c759; }

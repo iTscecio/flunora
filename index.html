@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611122338">
+  <link rel="stylesheet" href="css/style.css?v=202611131136">
 </head>
 <body>
 
@@ -72,6 +72,14 @@
         <button type="button" id="backup-banner-open" class="t"><b id="backup-banner-title"></b><span>Salva una copia dei tuoi dati</span></button>
         <button type="button" id="backup-banner-go" class="go">Backup</button>
         <button type="button" id="backup-banner-close" class="x" aria-label="Ricordamelo più tardi">&times;</button>
+      </div>
+
+      <!-- avanzo del mese (0.5.1) -->
+      <div id="left-banner" class="backup-banner left-banner" hidden>
+        <span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3v18M16.5 7.5c-.6-1.6-2.4-2.5-4.5-2.5-2.5 0-4.5 1.3-4.5 3.3 0 4.4 9.5 2.4 9.5 7 0 2-2 3.3-5 3.3-2.3 0-4.2-1-4.8-2.8"/></svg></span>
+        <button type="button" id="left-banner-open" class="t"><b id="left-banner-title"></b><span>Mettili da parte per i Desideri</span></button>
+        <button type="button" id="left-banner-go" class="go">Desideri</button>
+        <button type="button" id="left-banner-close" class="x" aria-label="Non ora">&times;</button>
       </div>
 
       <!-- saldo totale (0.2.4) -->
@@ -221,6 +229,17 @@
         <div class="wish-actions">
           <button type="button" class="adv-btn" id="wish-left-put">Metti da parte</button>
           <button type="button" class="adv-btn ghost" id="wish-left-skip">Non ora</button>
+        </div>
+      </section>
+      <section class="card wish-card wish-pool" id="wish-pool">
+        <div class="adv-head" id="pool-head">
+          <h2><span class="pool-ico"><svg viewBox="0 0 24 24"><path d="M5 11a7 6 0 0 1 12.5-3.5H20v4l-2 1v3h-2l-1 2h-2v-1.5h-3V18H8l-1-2.5A6 6 0 0 1 5 11zM14.5 10h.01M9 6.5a4 4 0 0 1 4-.5"/></svg></span>Salvadanaio</h2>
+          <b class="wish-price" id="pool-total"></b>
+        </div>
+        <p class="secondary small wish-info" id="pool-sub"></p>
+        <div class="wish-actions">
+          <button type="button" class="adv-btn" id="pool-put">Metti da parte</button>
+          <button type="button" class="adv-btn ghost" id="pool-assign">Assegna</button>
         </div>
       </section>
       <div id="wish-list"></div>
@@ -667,9 +686,14 @@
         <h2 id="wmove-title">Metti da parte</h2>
         <button type="submit" id="wmove-save" class="link-btn strong">Fatto</button>
       </div>
-      <div class="segmented two" id="wmove-dir">
+      <div class="segmented" id="wmove-dir">
         <button type="button" data-dir="in">Metti da parte</button>
+        <button type="button" data-dir="move">Sposta</button>
         <button type="button" data-dir="out">Riprendi</button>
+      </div>
+      <div id="wmove-to" class="wmove-to" hidden>
+        <h3 class="section-title">Verso</h3>
+        <div id="wmove-dest" class="chips"></div>
       </div>
       <label class="amount">
         <span>€</span>
@@ -697,11 +721,11 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611122338"></script>
-  <script src="js/releases.js?v=202611122338"></script>
-  <script src="js/icons.js?v=202611122338"></script>
-  <script src="js/app.js?v=202611122338"></script>
-  <script src="js/bank-bdp.js?v=202611122338"></script>
-  <script src="js/import.js?v=202611122338"></script>
+  <script src="js/config.js?v=202611131136"></script>
+  <script src="js/releases.js?v=202611131136"></script>
+  <script src="js/icons.js?v=202611131136"></script>
+  <script src="js/app.js?v=202611131136"></script>
+  <script src="js/bank-bdp.js?v=202611131136"></script>
+  <script src="js/import.js?v=202611131136"></script>
 </body>
 </html>
