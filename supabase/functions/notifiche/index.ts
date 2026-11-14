@@ -189,6 +189,7 @@ export async function handler(req: Request, testDb?: any, testNow?: Date): Promi
         const { error } = await db.from("transactions").insert({
           user_id: r.user_id, date: d, amount_cents: r.amount_cents, kind: r.kind, category_id: r.category_id,
           description: r.description, recurring_id: r.id,
+          ...(r.account_id ? { account_id: r.account_id } : {}), // 0.8.1: sul conto scelto
         });
         if (error && !/duplicate|23505/i.test(`${error.message} ${error.code}`)) break;
         if (!error) added++;

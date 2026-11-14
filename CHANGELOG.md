@@ -2,6 +2,13 @@
 
 I bug risolti si scrivono così: "Risolto un bug per cui … (bug #00X)", con lo stesso codice del documento di progetto e delle Novità nell'app.
 
+## 0.8.1
+- Pagina del conto (`#accpage-sheet`, IMPR-016): dalla lista dei Conti; movimenti del conto (`account_id`), trasferimenti in entrata e in uscita e, per il conto corrente, anticipi e quote restituite sul conto (per i Contanti quelle in contanti), dal mese scorso; "Mostra il mese prima" fino alla data del saldo iniziale. Il saldo dopo ogni voce si calcola all'indietro dal saldo di oggi (`state.accBal`). Toccando un movimento si apre il pannello sopra la pagina (`.sheet.over`); "Modifica" apre il conto
+- Ricontare (`#recount-sheet`, IMPR-017): per i Contanti "Riconta i contanti", per gli altri conti "Allinea il saldo"; la differenza diventa un movimento di oggi sul conto ("Spese in contanti non segnate" / "Contanti in più" / "Differenza di saldo") con categoria a scelta
+- Periodici su un conto (IMPR-018): `recurring.account_id` (vuoto = conto corrente). Riga "Addebito su" nel pannello + con Ripeti e nel pannello del periodico; spostandolo cambia solo il conto dei prossimi addebiti. `runRecurring` e la funzione `notifiche` copiano il conto nel movimento. In Abbonamenti il conto sotto il nome (con più conti)
+- IMPR-014: dalla sezione Abbonamenti il + parte da uscita, Ripeti ogni mese, Tipo Abbonamento, titolo "Nuovo abbonamento"
+- Supabase (`0.8.1_contanti_periodici.sql`): `recurring.account_id`; `restore_backup` ripristina il conto dei periodici. Ripubblicare la funzione `notifiche`
+
 ## 0.8.0
 - Conti: il conto corrente resta quello di sempre (movimenti con `account_id` vuoto, saldo iniziale in `settings.opening`, nome in `settings.main_name`); gli altri conti stanno nella tabella `accounts` (tipo `contanti` o `altro`, saldo iniziale e data, archiviabili; eliminabili solo senza movimenti né trasferimenti)
 - Saldi (`computeAccounts`): conto corrente = saldo calcolato come prima − movimenti degli altri conti dopo la sua data ± trasferimenti; ogni altro conto = saldo iniziale + i suoi movimenti + trasferimenti dopo la sua data; i Contanti prendono anche le quote degli anticipi restituite in contanti. Il saldo totale è la somma

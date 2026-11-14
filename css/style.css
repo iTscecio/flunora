@@ -1514,3 +1514,34 @@ body.is-locked { overflow: hidden; }
 :root[data-theme="dark"] .imp-chip.xfer { color: #a5a4ff; }
 /* bozza B: l'occhio scende sotto le scelte dei conti */
 .saldo-wrap:has(> #acc-pick:not([hidden])) .saldo-eye { top: 56px; }
+
+/* ---------- 0.8.1: pagina del conto e riconteggio ---------- */
+.sheet.over { z-index: 46; }
+.sheet-backdrop.over { z-index: 45; }
+.accpage { max-height: 94vh; }
+.accpage-head { display: grid; justify-items: center; gap: 4px; padding: 4px 16px 14px; flex: none; }
+.accpage-head strong { font-size: 34px; font-weight: 700; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
+.accpage-head strong.neg { color: var(--bad); }
+.accpage-recount { margin-top: 8px; }
+#accpage-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; padding-bottom: 12px; flex: none; }
+.acc-month { margin: 0; padding: 4px 0 4px 16px; }
+.acc-month-head { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 16px 4px 0; font-weight: 600; }
+.acc-month-head small { font-weight: 500; font-variant-numeric: tabular-nums; }
+.acc-items { margin: 0; }
+.acc-item { gap: 10px; }
+.acc-item .grow { min-width: 0; flex: 1; }
+.acc-item .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acc-item .sub { font-size: 13px; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acc-item-right { display: grid; justify-items: end; gap: 1px; flex: none; }
+.acc-item-right .amt { font-weight: 600; font-variant-numeric: tabular-nums; }
+.acc-item-right .amt.pos { color: var(--good); }
+.acc-item-right .amt.neg { color: var(--label, inherit); }
+.acc-item-right .amt.xfer { color: #5856d6; }
+.acc-after { font-size: 12px; color: var(--secondary); font-variant-numeric: tabular-nums; }
+.xfer-ico { --c: #5856d6; }
+.acc-more { justify-self: center; padding: 6px 12px; }
+.acc-start, .acc-empty { text-align: center; margin: 0; }
+.acc-loading { text-align: center; padding: 20px; }
+.recount-now { text-align: center; margin: 0 0 8px; }
+.recount-diff { margin: 0 16px 12px; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 12%, transparent); font-size: 15px; }
+.recount-diff.zero { background: color-mix(in srgb, var(--good) 14%, transparent); }

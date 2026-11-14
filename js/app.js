@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.8.0";
+const APP_VERSION = "0.8.1";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -1001,6 +1001,13 @@ function openSheet(tx) {
     if (state.page === "anticipi") setKind("anticipo");
     else if (state.kind === "anticipo") setKind("uscita");
   }
+  // IMPR-014 (0.8.1): dalla sezione Abbonamenti il + parte da un abbonamento che si ripete ogni mese
+  if (!tx && state.page === "abbonamenti") {
+    if (state.kind !== "uscita") setKind("uscita");
+    $("f-repeat").value = "mese";
+    $("f-sub").value = "1";
+    $("sheet-title").textContent = "Nuovo abbonamento";
+  }
   resetAdvFields();
   syncRepRow();
   // 0.7.0: dati dell'auto; dalla sezione Auto il + parte da un rifornimento
@@ -1014,9 +1021,9 @@ function closeSheet() {
   state.wishBuying = null;
   state.dupOf = null;
   state.editingRec = null;
-  $("sheet").classList.remove("open");
+  $("sheet").classList.remove("open", "over");
   $("sheet").setAttribute("aria-hidden", "true");
-  $("sheet-backdrop").classList.remove("open");
+  $("sheet-backdrop").classList.remove("open", "over");
   document.activeElement?.blur();
   state.editing = null;
 }
@@ -1936,6 +1943,7 @@ function refreshAfterChange(dateStr) {
   }
   if (state.page === "dashboard") loadDashboard();
   if (state.page === "auto") renderCar(); // 0.7.0
+  if (accPage && $("accpage-sheet").classList.contains("open")) refreshAccBalances().then(refreshAccPage).catch(() => {}); // 0.8.1
 }
 
 // =========================================================
@@ -3815,6 +3823,7 @@ async function runRecurring(quiet = false) {
           const { error } = await sb.from("transactions").insert({
             date: d, amount_cents: rec.amount_cents, kind: rec.kind, category_id: rec.category_id,
             description: rec.description, recurring_id: rec.id,
+            ...(rec.account_id ? { account_id: rec.account_id } : {}), // IMPR-018
           });
           if (error && !/duplicate|23505/i.test(`${error.message} ${error.code}`)) break;
           if (!error) added.push(rec);
@@ -3941,9 +3950,12 @@ async function saveNewRec(row, freq) {
     is_subscription: row.kind === "uscita" && $("f-sub").value === "1",
   };
   if (rec.is_subscription && (extra.trial_end || extra.cancel_by)) Object.assign(rec, extra);
+  const accId = recAccValue(); // IMPR-018: il conto su cui arriveranno gli addebiti
+  if (accId) rec.account_id = accId;
   const { error } = await sb.from("recurring").insert(rec);
   if (error) {
-    return setMsg($("sheet-msg"), /trial_end|cancel_by|notice_days/i.test(`${error.message}`) ? "Prima esegui lo script della 0.6.2 in Supabase."
+    return setMsg($("sheet-msg"), /account_id/i.test(`${error.message}`) ? "Prima esegui lo script della 0.8.1 in Supabase."
+      : /trial_end|cancel_by|notice_days/i.test(`${error.message}`) ? "Prima esegui lo script della 0.6.2 in Supabase."
       : /frequency|start_date|schema cache|PGRST204|42703/i.test(`${error.message} ${error.code}`)
       ? "Prima esegui lo script della 0.6.0 in Supabase." : "Errore nel salvataggio: " + traduciErrore(error.message), true);
   }
@@ -4043,12 +4055,16 @@ async function saveRecFromSheet() {
   }
   // data o frequenza cambiate: si riparte da quella data (i mesi già fatti restano, senza doppioni)
   if (date !== rec.shownDate || freq !== rec.frequency) Object.assign(patch, { start_date: date, last_date: null });
+  // IMPR-018: spostato su un altro conto (i prossimi addebiti arrivano lì, quelli passati restano dove sono)
+  const accNew = $("acc-row").hidden ? (rec.account_id || null) : recAccValue();
+  const moved = accNew !== (rec.account_id || null);
+  if (moved) patch.account_id = accNew;
   const oldCents = rec.amount_cents, oldFreq = rec.frequency;
   const { error } = await sb.from("recurring").update(patch).eq("id", rec.id);
-  if (error) return setMsg(msg, "Errore nel salvataggio: " + traduciErrore(error.message), true);
+  if (error) return setMsg(msg, /account_id/i.test(`${error.message}`) ? "Prima esegui lo script della 0.8.1 in Supabase." : "Errore nel salvataggio: " + traduciErrore(error.message), true);
   closeSheet();
   const diff = amount - oldCents;
-  toast(diff && patch.is_subscription
+  toast(moved && !diff ? `Spostato su ${accName(accNew)}: i prossimi addebiti arrivano lì` : diff && patch.is_subscription
     ? `Prezzo ${diff > 0 ? "aumentato" : "sceso"} di ${fmt(Math.abs(diff))}: ${diff > 0 ? "+" : "−"}${fmt(Math.abs(oldFreq === "anno" ? diff : diff * 12))} all'anno`
     : "Movimento periodico aggiornato");
   await runRecurring(true);
@@ -4163,6 +4179,7 @@ async function renderPeriodic() {
       const sub = el("small");
       if (g.tag) sub.append(el("b", "per-tag " + g.id, g.tag), " · ");
       sub.append(when);
+      if (multiAcc() || r.account_id) sub.append(` · ${accName(r.account_id)}`); // IMPR-018
       label.append(el("span", null, name), sub);
       // 0.6.2: prova gratuita e data per disdire
       const flags = [];
@@ -5011,7 +5028,7 @@ function renderAccSheet() {
     const c = per?.get(a.id);
     li.append(accIcon(a), label, el("span", "value" + (c < 0 ? " neg" : ""), c == null ? "" : saldoHidden() ? "****** €" : signedFmt(c)), el("span", "chev", "›"));
     if (a.archived) li.classList.add("archived");
-    li.addEventListener("click", () => openAccEdit(a));
+    li.addEventListener("click", () => openAccPage(a)); // IMPR-016
     return li;
   }));
   $("acc-xfer").hidden = !multiAcc();
@@ -5076,6 +5093,7 @@ $("accedit-backdrop").addEventListener("click", () => closeTopSheet("accedit-she
 async function afterAccChange() {
   await refreshAccBalances().catch(() => {});
   if ($("acc-sheet").classList.contains("open")) renderAccSheet();
+  refreshAccPage(); // 0.8.1
   if (state.page === "dashboard") loadBalance();
   if (state.page === "mesi") renderList();
 }
@@ -5199,7 +5217,7 @@ $("xfer-del").addEventListener("click", () => {
 function xferRow(x) {
   const li = el("li", "swipe xfer-row"); // stessa impaginazione dei movimenti, senza scorrimento
   const content = el("div", "row-content");
-  const ic = el("span", "cat-ico xfer-ico");
+  const ic = el("span", "cat-ico sm xfer-ico");
   ic.innerHTML = '<svg viewBox="0 0 24 24" class="ci"><path d="M4 8h14l-3-3M20 16H6l3 3"/></svg>';
   const grow = el("div", "grow");
   grow.append(el("div", "title", x.description || "Trasferimento"), el("div", "sub", `${accName(x.from_account)} → ${accName(x.to_account)}`));
@@ -5214,19 +5232,23 @@ const ACC_MEM = "flunora.accByCat";
 const accMem = () => { try { return JSON.parse(localStorage.getItem(ACC_MEM) || "{}"); } catch { return {}; } };
 function syncAccRow() {
   const tx = state.editing;
-  const show = (multiAcc() || !!tx?.account_id) && state.kind !== "anticipo" && !state.editingRec && !$("f-repeat").value;
+  const rec = state.editingRec; // IMPR-018: anche abbonamenti e periodici hanno il loro conto
+  const show = (multiAcc() || !!tx?.account_id || !!rec?.account_id) && state.kind !== "anticipo" && rec?.kind !== "risparmio";
   $("acc-row").hidden = !show;
   if (!show) return;
+  $("acc-row").querySelector("span").textContent = rec || $("f-repeat").value ? "Addebito su" : "Conto";
   const sel = $("f-account");
   const want = state.accPicked !== undefined ? state.accPicked
+    : rec ? rec.account_id || null
     : tx ? tx.account_id || null
     : accMem()[state.categoryId] ?? null;
-  accOptions(sel, want, [tx?.account_id]);
+  accOptions(sel, want, [tx?.account_id, rec?.account_id]);
   if (sel.value !== (want || "")) sel.value = "";
 }
 $("f-account").addEventListener("change", () => { state.accPicked = $("f-account").value || null; });
 $("f-repeat").addEventListener("change", syncAccRow);
 // conto da salvare con il movimento (non tocca nulla se la riga non c'è)
+const recAccValue = () => ($("acc-row").hidden ? null : $("f-account").value || null);
 function accFields(row) {
   if ($("acc-row").hidden) return row;
   const id = $("f-account").value || null;
@@ -5238,6 +5260,217 @@ function accFields(row) {
   }
   return row;
 }
+
+// =========================================================
+// 0.8.1 — PAGINA DEL CONTO (IMPR-016) E RICONTARE I CONTANTI (IMPR-017)
+// La pagina mostra i movimenti e i trasferimenti di un conto, mese per mese, con il saldo
+// dopo ognuno: si parte dal saldo di oggi e si torna indietro togliendo ogni voce.
+// =========================================================
+let accPage = null; // { acc, from, items }
+const monthStart = (d) => isoDate(new Date(d.getFullYear(), d.getMonth(), 1));
+
+async function openAccPage(a) {
+  accPage = { acc: a, from: monthStart(addMonths(new Date(), -1)), items: [] };
+  $("accpage-title").textContent = a.name;
+  $("accpage-list").replaceChildren(el("p", "secondary small acc-loading", "Carico i movimenti…"));
+  $("accpage-recount").hidden = a.main;
+  $("accpage-recount").textContent = a.type === "contanti" ? "Riconta i contanti" : "Allinea il saldo";
+  renderAccPageHead();
+  openTopSheet("accpage-sheet");
+  await loadAccPage();
+}
+function accStart(a) { return a.main ? opening()?.date : a.opening_date; }
+function renderAccPageHead() {
+  const a = accPage.acc, c = state.accBal?.get(a.id ?? null);
+  $("accpage-balance").textContent = c == null ? "—" : saldoHidden() ? "****** €" : signedFmt(c);
+  $("accpage-balance").classList.toggle("neg", c < 0 && !saldoHidden());
+  const st = accStart(a);
+  $("accpage-sub").textContent = st ? `Saldo di oggi · dal ${new Date(st + "T12:00").toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" })}` : "Saldo iniziale da impostare";
+}
+
+// tutte le voci del conto da `from` a oggi, ognuna con quanto cambia il saldo
+async function accItems(a, from) {
+  const today = isoDate(new Date());
+  const st = accStart(a) || from;
+  const lo = from > st ? from : st; // solo dopo il saldo iniziale (escluso il giorno stesso)
+  const id = a.id ?? null;
+  const txq = sb.from("transactions").select("*").gte("date", lo).lte("date", today);
+  const [tx, xf, adv, sh] = await Promise.all([
+    id ? txq.eq("account_id", id) : txq.is("account_id", null),
+    sb.from("transfers").select("*").gte("date", lo).lte("date", today),
+    a.main ? sb.from("advances").select("*").gte("date", lo).lte("date", today) : Promise.resolve({ data: [] }),
+    a.main || a.type === "contanti"
+      ? sb.from("advance_shares").select("*").in("status", a.main ? ["conto", "persa"] : ["contanti"]).gte("closed_on", lo).lte("closed_on", today)
+      : Promise.resolve({ data: [] }),
+  ]);
+  const cashId = activeAccounts().find((x) => x.type === "contanti")?.id;
+  const advIds = [...new Set((sh.data || []).map((q) => q.advance_id))];
+  const advName = new Map((advIds.length ? (await sb.from("advances").select("id, description").in("id", advIds)).data || [] : []).map((v) => [v.id, v.description]));
+  const items = [];
+  for (const t of tx.data || []) {
+    if (t.date <= st) continue;
+    const cat = catById(t.category_id);
+    items.push({ date: t.date, at: t.created_at || "", title: t.description || cat?.name || "Movimento", sub: cat?.name || "",
+      delta: t.kind === "entrata" ? t.amount_cents : -t.amount_cents, kind: t.kind, tx: t, cat });
+  }
+  for (const x of xf.data || []) {
+    if (x.date <= st) continue;
+    const into = (x.to_account ?? null) === id, out = (x.from_account ?? null) === id;
+    if (!into && !out) continue;
+    items.push({ date: x.date, at: x.created_at || "", title: x.description || "Trasferimento",
+      sub: into ? `Trasferimento da ${accName(x.from_account)}` : `Trasferimento verso ${accName(x.to_account)}`,
+      delta: into ? x.amount_cents : -x.amount_cents, xfer: x });
+  }
+  for (const v of adv.data || []) {
+    if (v.date <= st || v.total_cents === v.own_cents) continue;
+    items.push({ date: v.date, at: v.created_at || "", title: v.description, sub: "Anticipo · da ricevere", delta: -(v.total_cents - v.own_cents), adv: true });
+  }
+  for (const q of sh.data || []) {
+    if (q.closed_on <= st || (a.type === "contanti" && a.id !== cashId)) continue;
+    items.push({ date: q.closed_on, at: "", title: `${q.person} · ${advName.get(q.advance_id) || "anticipo"}`,
+      sub: q.status === "persa" ? "Quota non restituita: è diventata una spesa" : `Anticipo restituito${q.status === "contanti" ? " in contanti" : ""}`,
+      delta: q.amount_cents, adv: true });
+  }
+  return items.sort((p, q) => q.date.localeCompare(p.date) || String(q.at).localeCompare(String(p.at)));
+}
+
+async function loadAccPage() {
+  const a = accPage.acc;
+  try {
+    accPage.items = await accItems(a, accPage.from);
+  } catch { accPage.items = []; }
+  renderAccPage();
+}
+
+function renderAccPage() {
+  const a = accPage.acc, box = $("accpage-list");
+  const hide = saldoHidden();
+  let cur = state.accBal?.get(a.id ?? null) ?? 0;
+  const byMonth = new Map();
+  for (const it of accPage.items) {
+    it.after = cur; cur -= it.delta;
+    const k = it.date.slice(0, 7);
+    if (!byMonth.has(k)) byMonth.set(k, []);
+    byMonth.get(k).push(it);
+  }
+  const groups = [...byMonth].map(([k, list]) => {
+    const sec = el("section", "card acc-month");
+    const [y, m] = k.split("-").map(Number);
+    const net = list.reduce((s, it) => s + it.delta, 0);
+    const h = el("div", "acc-month-head");
+    h.append(el("span", null, `${MESI[m - 1][0].toUpperCase()}${MESI[m - 1].slice(1)} ${y}`), el("small", "secondary", `${net >= 0 ? "+ " : "− "}${fmt(Math.abs(net))}`));
+    const ul = el("ul", "list acc-items");
+    for (const it of list) {
+      const li = el("li", "tap acc-item");
+      const ic = it.xfer || it.adv ? el("span", "cat-ico sm xfer-ico") : catIcon(it.cat, "sm");
+      if (it.xfer || it.adv) ic.innerHTML = it.xfer ? '<svg viewBox="0 0 24 24" class="ci"><path d="M4 8h14l-3-3M20 16H6l3 3"/></svg>' : iconSvg("gift");
+      const grow = el("div", "grow");
+      const sd = advDate(it.date);
+      grow.append(el("div", "title", it.title), el("div", "sub", [sd, it.sub].filter(Boolean).join(" · ")));
+      const right = el("div", "acc-item-right");
+      right.append(el("span", "amt " + (it.delta >= 0 ? "pos" : "neg") + (it.xfer ? " xfer" : ""), (it.delta >= 0 ? "+ " : "− ") + fmt(Math.abs(it.delta))),
+        el("small", "acc-after", hide ? "saldo ****** €" : `saldo ${signedFmt(it.after)}`));
+      li.append(ic, grow, right);
+      if (it.tx) li.addEventListener("click", () => { openSheet(it.tx); $("sheet").classList.add("over"); $("sheet-backdrop").classList.add("over"); });
+      else if (it.xfer) li.addEventListener("click", () => openXfer(it.xfer));
+      else li.classList.remove("tap");
+      ul.append(li);
+    }
+    sec.append(h, ul);
+    return sec;
+  });
+  const st = accStart(a);
+  const more = el("button", "link-btn acc-more", "Mostra il mese prima");
+  more.type = "button";
+  more.hidden = !st || accPage.from <= st;
+  more.addEventListener("click", async () => {
+    accPage.from = monthStart(addMonths(new Date(accPage.from + "T12:00"), -1));
+    more.textContent = "Carico…";
+    await loadAccPage();
+  });
+  const start = el("p", "secondary small acc-start", st && accPage.from <= st
+    ? `${new Date(st + "T12:00").toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" })}: saldo iniziale ${signedFmt(a.main ? opening().cents : Number(a.opening_cents))}`
+    : "");
+  if (!groups.length) groups.push(el("p", "secondary small acc-empty", "Nessun movimento in questo periodo."));
+  box.replaceChildren(...groups, more, start);
+}
+
+$("accpage-close").addEventListener("click", () => closeTopSheet("accpage-sheet"));
+$("accpage-backdrop").addEventListener("click", () => closeTopSheet("accpage-sheet"));
+$("accpage-edit").addEventListener("click", () => { if (accPage) openAccEdit(accPage.acc); });
+$("accpage-recount").addEventListener("click", () => { if (accPage) openRecount(accPage.acc); });
+// dopo una modifica (movimento, trasferimento, conto) la pagina si aggiorna se è aperta
+async function refreshAccPage() {
+  if (!accPage || !$("accpage-sheet").classList.contains("open")) return;
+  const a = accPage.acc.main ? mainAcc() : (state.accounts || []).find((x) => x.id === accPage.acc.id);
+  if (!a) return closeTopSheet("accpage-sheet");
+  accPage.acc = a;
+  $("accpage-title").textContent = a.name;
+  renderAccPageHead();
+  await loadAccPage();
+}
+
+// ---------- IMPR-017: ricontare i contanti ----------
+let recount = null;
+function openRecount(a) {
+  recount = { acc: a, cents: state.accBal?.get(a.id) ?? 0 };
+  const cash = a.type === "contanti";
+  $("recount-title").textContent = cash ? "Riconta i contanti" : "Allinea il saldo";
+  $("recount-q").textContent = cash ? "Quanto hai adesso nel portafoglio?" : `Quanto c'è adesso su ${a.name}?`;
+  $("recount-value").value = "";
+  $("recount-now").textContent = `Per Flunora: ${signedFmt(recount.cents)}`;
+  setMsg($("recount-msg"), "");
+  syncRecount();
+  openTopSheet("recount-sheet");
+}
+function recountCats(kind) {
+  const list = state.categories.filter((c) => c.kind === kind && !c.archived);
+  const sel = $("recount-cat");
+  const prev = sel.value;
+  sel.replaceChildren(...list.map((c) => new Option(c.name, c.id)));
+  const def = list.find((c) => c.id === prev) || list.find((c) => /^altro$/i.test(c.name)) || list.at(-1);
+  if (def) sel.value = def.id;
+}
+function syncRecount() {
+  const v = parseSigned($("recount-value").value || "");
+  const box = $("recount-diff");
+  const cash = recount.acc.type === "contanti";
+  if (v === null || !$("recount-value").value.trim()) { box.hidden = true; $("recount-cat-row").hidden = true; return; }
+  const diff = v - recount.cents;
+  box.hidden = false;
+  box.classList.toggle("zero", diff === 0);
+  if (diff === 0) { box.textContent = "Torna al centesimo: non serve aggiungere nulla."; $("recount-cat-row").hidden = true; return; }
+  const kind = diff < 0 ? "uscita" : "entrata";
+  recount.kind = kind; recount.diff = diff;
+  recountCats(kind);
+  $("recount-cat-row").hidden = false;
+  box.textContent = diff < 0
+    ? `Mancano ${fmt(-diff)}: diventano un'uscita di oggi, "${cash ? "Spese in contanti non segnate" : "Differenza di saldo"}".`
+    : `Ci sono ${fmt(diff)} in più: diventano un'entrata di oggi, "${cash ? "Contanti in più" : "Differenza di saldo"}".`;
+}
+$("recount-value").addEventListener("input", syncRecount);
+$("recount-cancel").addEventListener("click", () => closeTopSheet("recount-sheet"));
+$("recount-backdrop").addEventListener("click", () => closeTopSheet("recount-sheet"));
+$("recount-sheet").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const v = parseSigned($("recount-value").value || "");
+  if (v === null || !$("recount-value").value.trim()) return setMsg($("recount-msg"), "Scrivi quanto hai, es. 142,50.", true);
+  const diff = v - recount.cents;
+  if (diff === 0) { closeTopSheet("recount-sheet"); return toast("Il saldo torna: nessuna differenza"); }
+  const cash = recount.acc.type === "contanti";
+  const row = {
+    date: isoDate(new Date()), kind: diff < 0 ? "uscita" : "entrata", amount_cents: Math.abs(diff),
+    category_id: $("recount-cat").value || null, account_id: recount.acc.id,
+    description: diff < 0 ? (cash ? "Spese in contanti non segnate" : "Differenza di saldo") : (cash ? "Contanti in più" : "Differenza di saldo"),
+  };
+  const { error } = await sb.from("transactions").insert(row);
+  if (error) return setMsg($("recount-msg"), "Errore nel salvataggio: " + traduciErrore(error.message), true);
+  closeTopSheet("recount-sheet");
+  toast(`${recount.acc.name}: ora ${signedFmt(v)}`);
+  refreshAfterChange(row.date);
+  await afterAccChange();
+  refreshAccPage();
+});
 
 // =========================================================
 // 0.7.0 — AUTO
