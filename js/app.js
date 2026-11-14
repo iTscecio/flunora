@@ -1,7 +1,7 @@
 // =========================================================
 //  Flunora — logica dell'app
 // =========================================================
-const APP_VERSION = "0.8.1";
+const APP_VERSION = "0.9.0";
 
 const sb = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
@@ -114,7 +114,7 @@ async function init() {
   if (lockCfg()) { $("lock").hidden = false; document.body.classList.add("is-locked"); } // IMPR-004: niente dati visibili prima di Face ID
   const { data } = await sb.auth.getSession();
   handleSession(data.session);
-  sb.auth.onAuthStateChange((_e, session) => handleSession(session));
+  sb.auth.onAuthStateChange((e, session) => { handleSession(session); if (e === "PASSWORD_RECOVERY") onRecovery(); }); // 0.9.0
 }
 
 function handleSession(session) {
@@ -129,32 +129,6 @@ function handleSession(session) {
   if (user) startApp();
 }
 
-$("login-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const msg = $("login-msg");
-  setMsg(msg, "Accesso in corso…");
-  const { error } = await sb.auth.signInWithPassword({
-    email: $("login-email").value.trim(),
-    password: $("login-password").value,
-  });
-  setMsg(msg, error ? traduciErrore(error.message) : "", !!error);
-});
-
-$("btn-signup").addEventListener("click", async () => {
-  const msg = $("login-msg");
-  const email = $("login-email").value.trim();
-  const password = $("login-password").value;
-  if (!email || password.length < 6) {
-    setMsg(msg, "Inserisci email e una password di almeno 6 caratteri.", true);
-    return;
-  }
-  setMsg(msg, "Registrazione in corso…");
-  const { data, error } = await sb.auth.signUp({ email, password });
-  if (error) setMsg(msg, traduciErrore(error.message), true);
-  else if (!data.session) setMsg(msg, "Account creato: conferma l'email e poi accedi.");
-  else setMsg(msg, "");
-});
-
 $("btn-logout").addEventListener("click", async () => {
   if (confirm("Vuoi uscire da Flunora?")) { lockOff(); await sb.auth.signOut(); }
 });
@@ -164,6 +138,10 @@ function traduciErrore(m) {
   if (/email not confirmed/i.test(m)) return "Devi prima confermare l'email.";
   if (/already registered/i.test(m)) return "Questa email è già registrata: usa Accedi.";
   if (/signups not allowed/i.test(m)) return "Le nuove registrazioni sono disattivate.";
+  if (/rate limit|only request this/i.test(m)) return "Troppe richieste ravvicinate: aspetta un minuto e riprova."; // 0.9.0
+  if (/not authorized/i.test(m)) return "Per ora Flunora non riesce a mandare email a questo indirizzo.";
+  if (/should be different|same password/i.test(m)) return "La password nuova deve essere diversa da quella di prima.";
+  if (/password should be|weak password/i.test(m)) return "Password troppo debole: usa almeno 6 caratteri, meglio con numeri.";
   if (/failed to fetch|network/i.test(m)) return "Nessuna connessione. Riprova.";
   return m;
 }
@@ -172,11 +150,13 @@ function traduciErrore(m) {
 //  AVVIO E NAVIGAZIONE
 // =========================================================
 async function startApp() {
-  $("set-email").textContent = state.user.email || "";
+  renderAccount(); // 0.9.0
   await Promise.all([loadCategories(), loadSettings(), loadAccounts()]); // 0.8.0: conti
   renderTabbar();
   route();
   runRecurring(); // 0.6.0: aggiunge i movimenti periodici arrivati a scadenza
+  loadAdmin(); // 0.9.0: solo per l'amministratore
+  if (await maybeWelcome() !== false && !$("welcome").hidden) return; // 0.9.0: chi inizia vede il benvenuto, non le Novità
   maybeShowWhatsNew();
   maybeAutoCopy();
 }
@@ -5471,6 +5451,250 @@ $("recount-sheet").addEventListener("submit", async (ev) => {
   await afterAccChange();
   refreshAccPage();
 });
+
+// =========================================================
+// 0.9.0 — PIÙ UTENTI
+// Registrazione libera (nome, email, password due volte, privacy), password dimenticata,
+// benvenuto per chi inizia, account (nome, password, elimina) e, solo per l'amministratore,
+// quanti utenti ci sono e quanto spazio usano.
+// =========================================================
+let loginMode = "in";
+function setLoginMode(m) {
+  loginMode = m;
+  const up = m === "up";
+  for (const b of $("login-seg").querySelectorAll("button")) b.classList.toggle("on", b.dataset.m === m);
+  $("row-name").hidden = !up;
+  $("row-pass2").hidden = !up;
+  $("row-consent").hidden = !up;
+  $("btn-forgot").hidden = up;
+  $("login-submit").textContent = up ? "Crea l'account" : "Accedi";
+  $("login-password").autocomplete = up ? "new-password" : "current-password";
+  setMsg($("login-msg"), "");
+}
+$("login-seg").addEventListener("click", (e) => { const b = e.target.closest("button[data-m]"); if (b) setLoginMode(b.dataset.m); });
+const appUrl = () => location.origin + location.pathname;
+function showSent(title, text) {
+  $("sent-title").textContent = title;
+  $("sent-text").textContent = text;
+  setMsg($("sent-msg"), "");
+  $("login-sent").hidden = false;
+  document.querySelector("#view-login .login:not(.login-sent)").hidden = true;
+}
+$("sent-back").addEventListener("click", () => {
+  $("login-sent").hidden = true;
+  document.querySelector("#view-login .login:not(.login-sent)").hidden = false;
+  setLoginMode("in");
+});
+let lastSent = null; // { kind: "signup" | "reset", email }
+$("sent-again").addEventListener("click", async () => {
+  if (!lastSent) return;
+  const { error } = lastSent.kind === "reset"
+    ? await sb.auth.resetPasswordForEmail(lastSent.email, { redirectTo: appUrl() })
+    : await sb.auth.resend({ type: "signup", email: lastSent.email, options: { emailRedirectTo: appUrl() } });
+  setMsg($("sent-msg"), error ? traduciErrore(error.message) : "Inviata di nuovo: guarda anche nella posta indesiderata.", !!error);
+});
+
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const msg = $("login-msg");
+  const email = $("login-email").value.trim(), password = $("login-password").value;
+  if (loginMode === "in") {
+    setMsg(msg, "Accesso in corso…");
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    return setMsg(msg, error ? traduciErrore(error.message) : "", !!error);
+  }
+  const name = $("login-name").value.trim();
+  if (!name) return setMsg(msg, "Scrivi il tuo nome.", true);
+  if (!/^\S+@\S+\.\S+$/.test(email)) return setMsg(msg, "Controlla l'email.", true);
+  if (password.length < 6) return setMsg(msg, "La password deve avere almeno 6 caratteri.", true);
+  if (password !== $("login-password2").value) return setMsg(msg, "Le due password non sono uguali.", true);
+  if (!$("login-consent").checked) return setMsg(msg, "Per continuare leggi come Flunora tratta i tuoi dati e spunta la casella.", true);
+  setMsg(msg, "Creo l'account…");
+  const { data, error } = await sb.auth.signUp({ email, password, options: { data: { name }, emailRedirectTo: appUrl() } });
+  if (error) return setMsg(msg, traduciErrore(error.message), true);
+  if (!data.session) {
+    lastSent = { kind: "signup", email };
+    showSent("Controlla la tua email", `Ti abbiamo scritto a ${email}: tocca il link per attivare l'account, poi torna qui e accedi.`);
+  }
+});
+
+$("btn-forgot").addEventListener("click", async () => {
+  const msg = $("login-msg"), email = $("login-email").value.trim();
+  if (!/^\S+@\S+\.\S+$/.test(email)) return setMsg(msg, "Scrivi la tua email qui sopra, poi tocca di nuovo «Password dimenticata?».", true);
+  setMsg(msg, "Invio l'email…");
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: appUrl() });
+  if (error) return setMsg(msg, traduciErrore(error.message), true);
+  lastSent = { kind: "reset", email };
+  showSent("Controlla la tua email", `Se ${email} ha un account, ti è arrivato un link per scegliere una nuova password.`);
+});
+
+// dal link dell'email "nuova password": l'app si apre già dentro e chiede la password nuova
+function onRecovery() { setTimeout(() => openAcct("password", true), 600); }
+
+// ---------- privacy ----------
+const openPrivacy = () => openTopSheet("privacy-sheet");
+$("open-privacy").addEventListener("click", openPrivacy);
+$("open-privacy2").addEventListener("click", openPrivacy);
+$("privacy-close").addEventListener("click", () => closeTopSheet("privacy-sheet"));
+$("privacy-backdrop").addEventListener("click", () => closeTopSheet("privacy-sheet"));
+
+// ---------- account: nome e password ----------
+const userName = () => state.user?.user_metadata?.name || "";
+let acctMode = "name";
+function openAcct(mode, recovery = false) {
+  acctMode = mode;
+  $("acct-title").textContent = mode === "name" ? "Nome" : recovery ? "Nuova password" : "Cambia password";
+  $("acct-name-box").hidden = mode !== "name";
+  $("acct-pass-box").hidden = mode !== "password";
+  $("acct-name").value = userName();
+  $("acct-pass").value = ""; $("acct-pass2").value = "";
+  $("acct-note").textContent = mode === "name" ? "Flunora lo usa per salutarti." : recovery ? "Scegli la password nuova: la userai da ora per accedere." : "Vale per tutti i dispositivi su cui usi Flunora.";
+  setMsg($("acct-msg"), "");
+  openTopSheet("acct-sheet");
+}
+$("open-name").addEventListener("click", () => openAcct("name"));
+$("open-password").addEventListener("click", () => openAcct("password"));
+$("acct-cancel").addEventListener("click", () => closeTopSheet("acct-sheet"));
+$("acct-backdrop").addEventListener("click", () => closeTopSheet("acct-sheet"));
+$("acct-sheet").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const msg = $("acct-msg");
+  let patch;
+  if (acctMode === "name") {
+    const name = $("acct-name").value.trim();
+    if (!name) return setMsg(msg, "Scrivi il tuo nome.", true);
+    patch = { data: { name } };
+  } else {
+    const p = $("acct-pass").value;
+    if (p.length < 6) return setMsg(msg, "La password deve avere almeno 6 caratteri.", true);
+    if (p !== $("acct-pass2").value) return setMsg(msg, "Le due password non sono uguali.", true);
+    patch = { password: p };
+  }
+  const { data, error } = await sb.auth.updateUser(patch);
+  if (error) return setMsg(msg, traduciErrore(error.message), true);
+  if (data?.user) state.user = data.user;
+  closeTopSheet("acct-sheet");
+  renderAccount();
+  toast(acctMode === "name" ? "Nome salvato" : "Password cambiata");
+});
+function renderAccount() {
+  $("set-email").textContent = state.user?.email || "";
+  $("set-name").textContent = userName() || "Da scrivere";
+}
+
+// ---------- elimina l'account ----------
+$("open-delacc").addEventListener("click", () => {
+  $("delacc-word").value = ""; $("delacc-go").disabled = true; setMsg($("delacc-msg"), "");
+  openTopSheet("delacc-sheet");
+});
+$("delacc-word").addEventListener("input", () => { $("delacc-go").disabled = $("delacc-word").value.trim().toUpperCase() !== "ELIMINA"; });
+$("delacc-cancel").addEventListener("click", () => closeTopSheet("delacc-sheet"));
+$("delacc-backdrop").addEventListener("click", () => closeTopSheet("delacc-sheet"));
+$("delacc-backup").addEventListener("click", () => $("backup-create").click());
+$("delacc-sheet").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if ($("delacc-word").value.trim().toUpperCase() !== "ELIMINA") return;
+  setMsg($("delacc-msg"), "Elimino l'account…");
+  const { error } = await sb.rpc("delete_my_account");
+  if (error) return setMsg($("delacc-msg"), /function|schema cache|PGRST202/i.test(`${error.message} ${error.code}`) ? "Prima va eseguito lo script della 0.9.0 in Supabase." : "Non riuscito: " + traduciErrore(error.message), true);
+  closeTopSheet("delacc-sheet");
+  try { for (const k of Object.keys(localStorage)) if (k.startsWith("flunora.") && k !== LS_THEME) localStorage.removeItem(k); } catch {}
+  lockOff();
+  await sb.auth.signOut();
+  setMsg($("login-msg"), "Account eliminato. Grazie di aver usato Flunora.");
+});
+
+// ---------- benvenuto (solo per chi inizia: nessun movimento e nessun saldo) ----------
+let welStep = 1;
+async function maybeWelcome() {
+  if (state.settingsData?.welcome_done || opening()) return;
+  const { count, error } = await sb.from("transactions").select("id", { count: "exact", head: true });
+  if (error || count) return;
+  openWelcome();
+}
+const WEL_SECTIONS = [
+  ["mesi", "Mesi", "Movimenti giorno per giorno e budget del mese"],
+  ["abbonamenti", "Abbonamenti", "Abbonamenti e spese che si ripetono"],
+  ["desideri", "Desideri", "Mettere da parte soldi per qualcosa"],
+  ["anticipi", "Anticipi", "Soldi anticipati per altri, da farsi restituire"],
+  ["auto", "Auto", "Spese, rifornimenti e scadenze dell'auto"],
+];
+function openWelcome() {
+  welStep = 1;
+  $("wel-hello").textContent = userName() ? `Ciao ${userName()}!` : "Ciao!";
+  $("wel-amount").value = "";
+  $("wel-sections").replaceChildren(...WEL_SECTIONS.map(([id, name, sub]) => {
+    const li = el("li");
+    const label = el("span", "label"); label.append(el("span", null, name), el("small", null, sub));
+    const sw = el("label", "switch"); const cb = document.createElement("input"); cb.type = "checkbox"; cb.dataset.id = id;
+    cb.checked = state.sections.find((s) => s.id === id)?.on ?? id === "mesi";
+    sw.append(cb, el("span"));
+    const ic = el("span", "ico"); ic.style.setProperty("--c", SECTIONS[id].color); ic.innerHTML = iconSvg({ mesi: "chart", abbonamenti: "repeat", desideri: "star", anticipi: "people", auto: "car" }[id] || "tag");
+    li.append(ic, label, sw);
+    return li;
+  }));
+  renderWelStep();
+  $("welcome").hidden = false;
+  document.body.classList.add("welcome-open");
+}
+function renderWelStep() {
+  for (const s of $("welcome").querySelectorAll(".welcome-step")) s.hidden = Number(s.dataset.step) !== welStep;
+  [...$("welcome").querySelectorAll(".welcome-dots span")].forEach((d, i) => d.classList.toggle("on", i < welStep));
+  $("wel-next").hidden = welStep === 3;
+  $("wel-skip").textContent = welStep === 3 ? "Indietro" : "Salta";
+}
+$("wel-next").addEventListener("click", () => { welStep++; renderWelStep(); });
+$("wel-skip").addEventListener("click", () => { if (welStep === 3) welStep = 2; else welStep++; renderWelStep(); });
+async function finishWelcome(then) {
+  const cents = parseSigned($("wel-amount").value || "");
+  if (cents !== null && $("wel-amount").value.trim()) state.settingsData.opening = { cents, date: addDays(isoDate(new Date()), -1) };
+  for (const cb of $("wel-sections").querySelectorAll("input[data-id]")) {
+    const s = state.sections.find((x) => x.id === cb.dataset.id);
+    if (s) s.on = cb.checked;
+  }
+  state.settingsData.welcome_done = true;
+  await saveSettingsData();
+  $("welcome").hidden = true;
+  document.body.classList.remove("welcome-open");
+  renderTabbar();
+  location.hash = "dashboard";
+  route();
+  then?.();
+}
+$("wel-import").addEventListener("click", () => finishWelcome(() => $("open-import").click()));
+$("wel-manual").addEventListener("click", () => finishWelcome(() => setTimeout(() => openSheet(null), 400)));
+
+// ---------- solo per l'amministratore: utenti e spazio ----------
+const DB_LIMIT = 500 * 1024 * 1024; // piano gratuito di Supabase
+let adminData = null;
+async function loadAdmin() {
+  const { data, error } = await sb.rpc("admin_stats");
+  adminData = !error && data ? data : null;
+  $("admin-box").hidden = !adminData;
+  if (adminData) $("set-admin").textContent = `${adminData.users} ${adminData.users === 1 ? "utente" : "utenti"}`;
+}
+const mb = (b) => `${(b / 1048576).toLocaleString("it-IT", { maximumFractionDigits: b < 10485760 ? 1 : 0 })} MB`;
+function renderAdmin() {
+  const d = adminData; if (!d) return;
+  const kpi = (n, l) => { const c = el("div", "card admin-kpi"); c.append(el("strong", null, String(n)), el("span", "secondary", l)); return c; };
+  $("admin-kpis").replaceChildren(kpi(d.users, "registrati"), kpi(d.active30, "attivi in 30 giorni"), kpi(d.new7, "nuovi in 7 giorni"));
+  const pct = Math.min(100, (d.db_bytes / DB_LIMIT) * 100);
+  const perUser = d.users ? Math.max(0, d.data_bytes / d.users) : 0;
+  const room = perUser ? Math.floor((DB_LIMIT * 0.9 - d.db_bytes) / perUser) : null;
+  const box = $("admin-space");
+  const bar = el("div", "admin-bar" + (pct > 80 ? " warn" : "")); const fill = el("span"); fill.style.width = `${pct.toFixed(1)}%`; bar.append(fill);
+  const head = el("div", "admin-space-head"); head.append(el("strong", null, mb(d.db_bytes)), el("span", "secondary", `di 500 MB · ${pct.toLocaleString("it-IT", { maximumFractionDigits: 0 })}%`));
+  box.replaceChildren(head, bar,
+    el("p", "secondary small", `Dati degli utenti: ${mb(d.data_bytes)}, in media ${mb(perUser)} a testa (${d.tx.toLocaleString("it-IT")} movimenti in tutto). Il resto è di Supabase e non cresce con gli utenti.`),
+    el("p", "admin-room", room == null ? "" : `Con utenti come quelli di oggi c'è posto per circa ${room.toLocaleString("it-IT")} utenti in più, fermandosi al 90%.`));
+  $("admin-tables").replaceChildren(...d.tables.slice(0, 6).map((t) => {
+    const li = el("li"); li.append(el("span", "label", t.label || t.name), el("span", "value", mb(t.bytes))); return li;
+  }));
+  $("admin-note").textContent = "Lo spazio lo conta il database; il traffico del mese (5 GB nel piano gratuito) si vede solo nella pagina Usage di Supabase.";
+}
+$("open-admin").addEventListener("click", async () => { await loadAdmin(); renderAdmin(); openTopSheet("admin-sheet"); });
+$("admin-close").addEventListener("click", () => closeTopSheet("admin-sheet"));
+$("admin-backdrop").addEventListener("click", () => closeTopSheet("admin-sheet"));
 
 // =========================================================
 // 0.7.0 — AUTO
