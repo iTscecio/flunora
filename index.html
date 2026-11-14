@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="icons/favicon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
-  <link rel="stylesheet" href="css/style.css?v=202611132340">
+  <link rel="stylesheet" href="css/style.css?v=202611141437">
 </head>
 <body>
 
@@ -889,6 +889,46 @@
       <p class="secondary small foot" id="acc-note">Ogni movimento ha il suo conto: di base il conto corrente, quello dell'estratto conto. I prelievi al bancomat e gli spostamenti tra i tuoi conti sono trasferimenti: non sono né spese né entrate.</p>
     </section>
 
+    <!-- ---------- 0.8.1: PAGINA DEL CONTO (IMPR-016) ---------- -->
+    <div id="accpage-backdrop" class="sheet-backdrop top"></div>
+    <section id="accpage-sheet" class="sheet top accpage" aria-hidden="true">
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <button type="button" id="accpage-close" class="link-btn">Indietro</button>
+        <h2 id="accpage-title">Conto</h2>
+        <button type="button" id="accpage-edit" class="link-btn strong">Modifica</button>
+      </div>
+      <div class="accpage-head">
+        <strong id="accpage-balance">—</strong>
+        <small id="accpage-sub" class="secondary"></small>
+        <button type="button" id="accpage-recount" class="btn-plain accpage-recount" hidden>Riconta i contanti</button>
+      </div>
+      <div id="accpage-list"></div>
+    </section>
+
+    <!-- ---------- 0.8.1: RICONTARE I CONTANTI (IMPR-017) ---------- -->
+    <div id="recount-backdrop" class="sheet-backdrop top"></div>
+    <form id="recount-sheet" class="sheet top" aria-hidden="true" novalidate>
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <button type="button" id="recount-cancel" class="link-btn">Annulla</button>
+        <h2 id="recount-title">Riconta i contanti</h2>
+        <button type="submit" class="link-btn strong">Salva</button>
+      </div>
+      <p class="adv-hint" id="recount-q">Quanto hai adesso nel portafoglio?</p>
+      <label class="amount">
+        <span>€</span>
+        <input id="recount-value" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Quanto hai">
+      </label>
+      <p class="secondary small recount-now" id="recount-now"></p>
+      <p class="recount-diff" id="recount-diff" hidden></p>
+      <div class="group" id="recount-cat-row" hidden>
+        <label class="group-row"><span>Categoria</span><select id="recount-cat"></select></label>
+      </div>
+      <p class="secondary small foot">Conta le banconote e le monete: se manca qualcosa, sono spese che non hai segnato. Flunora aggiunge la differenza con la data di oggi, così il saldo torna.</p>
+      <p id="recount-msg" class="msg" role="status"></p>
+    </form>
+
     <!-- ---------- 0.8.0: UN CONTO (nuovo o da modificare) ---------- -->
     <div id="accedit-backdrop" class="sheet-backdrop top"></div>
     <form id="accedit-sheet" class="sheet top" aria-hidden="true" novalidate>
@@ -1031,11 +1071,11 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=202611132340"></script>
-  <script src="js/releases.js?v=202611132340"></script>
-  <script src="js/icons.js?v=202611132340"></script>
-  <script src="js/app.js?v=202611132340"></script>
-  <script src="js/bank-bdp.js?v=202611132340"></script>
-  <script src="js/import.js?v=202611132340"></script>
+  <script src="js/config.js?v=202611141437"></script>
+  <script src="js/releases.js?v=202611141437"></script>
+  <script src="js/icons.js?v=202611141437"></script>
+  <script src="js/app.js?v=202611141437"></script>
+  <script src="js/bank-bdp.js?v=202611141437"></script>
+  <script src="js/import.js?v=202611141437"></script>
 </body>
 </html>

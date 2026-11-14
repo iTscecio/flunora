@@ -5,6 +5,15 @@
 // =========================================================
 window.RELEASES = [
   {
+    version: "0.8.1", date: "14 novembre 2026",
+    items: [
+      "Pagina del conto: in Conti tocca un conto per vedere i suoi movimenti e trasferimenti, mese per mese, con il saldo dopo ognuno. Toccando un movimento lo modifichi; \"Mostra il mese prima\" va indietro fino al saldo iniziale (IMPR-016)",
+      "Riconta i contanti: dalla pagina dei Contanti scrivi quanto hai nel portafoglio. Se manca qualcosa Flunora aggiunge un'uscita di oggi, \"Spese in contanti non segnate\"; se c'è di più, un'entrata. Per gli altri conti c'è \"Allinea il saldo\" (IMPR-017)",
+      "Abbonamenti e pagamenti periodici su un conto: quando ne crei uno scegli \"Addebito su\"; quelli che hai già si spostano toccandoli. Dal giorno dopo gli addebiti arrivano sul nuovo conto, quelli passati restano dove sono. Nella sezione Abbonamenti, sotto il nome, compare il conto (IMPR-018)",
+      "Dalla sezione Abbonamenti il + apre subito \"Nuovo abbonamento\", già impostato su Ripeti ogni mese (IMPR-014)",
+    ],
+  },
+  {
     version: "0.8.0", date: "13 novembre 2026",
     items: [
       "Più conti: oltre al conto corrente puoi aggiungere i Contanti e altre carte o conti, ognuno con il suo saldo iniziale. Li trovi in Impostazioni › Conti e saldo iniziale, o toccando il saldo nella Dashboard",
